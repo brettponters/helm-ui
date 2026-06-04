@@ -1,51 +1,43 @@
 # Helm
 
-A full-screen terminal workspace for running and organizing many Claude Code
-agents at once. Group agents into **teams**, lay them out automatically (or put a
-**lead** in the center with sub-agents on the sides), watch the real files each one
-is working on in a built-in **preview**, and let them **message each other live**.
+A macOS app for running and orchestrating many **Claude Code** agents at once.
+Group agents into **teams**, lay them out automatically (or put a **lead** in the
+center with sub-agents on the sides), watch the real files each one is working on
+in a built-in **preview**, and let them **message each other live**.
 
-Black-and-white, terminal-native. Open source. macOS-first.
+Black-and-white, terminal-native. Open source. Built specifically for Claude Code.
 
 ---
 
-## Install
+## Get the app
+
+**Download** the latest `Helm.app` from the
+[Releases page](https://github.com/brettponters/helm/releases/latest), unzip it,
+and move it to your Applications folder. On first launch, right-click `Helm.app` →
+**Open** (it's ad-hoc signed, not yet notarized, so macOS asks once).
+
+Apple Silicon (arm64) only for now.
+
+**Or build it yourself:**
 
 ```bash
 git clone https://github.com/brettponters/helm.git
 cd helm
 npm install
+npm run app:dist     # → release/mac-arm64/Helm.app
 ```
 
-## Run it
-
-Two ways:
-
-**As a desktop app (recommended):**
-```bash
-npm run app
-```
-A native Helm window opens. It runs everything for you, no browser, no URLs.
-
-**In your browser:**
-```bash
-npm run helm
-```
-Then open <http://localhost:5199>.
-
-Either way, three local services start:
-
-| Service | Port | What it does |
-|---------|------|--------------|
-| broker  | 7900 | Tracks live agents, routes messages, serves file previews (in-memory) |
-| pty     | 7901 | Spawns a real shell per panel (node-pty over a WebSocket) |
-| ui      | 5199 | The Helm interface |
+Open Helm and you get a full window of terminal panels, one per Claude Code
+agent. Everything runs inside the app; there's no browser tab and no URL to
+remember.
 
 ---
 
 ## Using Helm
 
-Each panel is a **real terminal** (a login shell). You can run anything in it.
+Each panel is where a **Claude Code agent** runs, type `claude` (or `claude helm`
+to join the team chat, below). Panels are real shells, so you can also run `git`,
+tests, or a dev server alongside your agents.
 
 - **Teams**, the tabs across the top. Click `+` to add one, double-click to
   rename, hover and click `✕` to delete (it confirms first).
