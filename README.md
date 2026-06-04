@@ -12,7 +12,7 @@ Black-and-white, terminal-native. Open source. Built specifically for Claude Cod
 ## Get the app
 
 **Download** the latest `Helm.app` from the
-[Releases page](https://github.com/brettponters/helm/releases/latest), unzip it,
+[Releases page](https://github.com/brettponters/helm-ui/releases/latest), unzip it,
 and move it to your Applications folder. On first launch, right-click `Helm.app` →
 **Open** (it's ad-hoc signed, not yet notarized, so macOS asks once).
 
@@ -21,8 +21,8 @@ Apple Silicon (arm64) only for now.
 **Or build it yourself:**
 
 ```bash
-git clone https://github.com/brettponters/helm.git
-cd helm
+git clone https://github.com/brettponters/helm-ui.git
+cd helm-ui
 npm install
 npm run app:dist     # → release/mac-arm64/Helm.app
 ```
