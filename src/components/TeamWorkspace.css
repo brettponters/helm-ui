@@ -1,0 +1,179 @@
+.workspace {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.workspace-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--cols), 1fr);
+  grid-template-rows: repeat(var(--rows), 1fr);
+  width: 100%;
+  height: 100%;
+  gap: 0;
+  transition: grid-template-columns var(--duration-slow) var(--ease-out-expo),
+              grid-template-rows var(--duration-slow) var(--ease-out-expo);
+}
+
+/* Stable wrapper so a panel keeps its identity (and its shell) when the layout
+   switches between grid and lead, only this slot's grid placement changes. */
+.panel-slot {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.panel-slot > .panel {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Draggable divider for resizing the lead column. */
+.lead-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  margin-left: -4px;
+  z-index: 6;
+  cursor: col-resize;
+}
+
+.lead-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: var(--border);
+  transition: background var(--duration-fast);
+}
+
+.lead-resizer:hover::after,
+.lead-resizer:active::after {
+  background: var(--accent, #ffffff);
+  box-shadow: 0 0 8px var(--accent, #ffffff);
+}
+
+/* Bottom dock: a small always-visible hint that reveals the grid/lead switcher
+   when you move near the bottom-center. */
+.layout-dock {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  /* invisible hover-catch area around the hint so "move to the bottom" reveals it */
+  padding: 26px 48px 0;
+}
+
+.layout-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding-bottom: 8px;
+  transition: opacity var(--duration-normal) var(--ease-out-expo);
+}
+
+.layout-hint-bar {
+  width: 42px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-hover);
+  animation: hint-breathe 2.6s ease-in-out infinite;
+}
+
+.layout-hint-label {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: var(--text-dim);
+}
+
+@keyframes hint-breathe {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; box-shadow: 0 0 8px var(--accent, #ffffff); }
+}
+
+/* hide the hint once the switcher is revealed */
+.layout-dock:hover .layout-hint { opacity: 0; }
+
+.layout-switch {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  background: #0a0a0a;
+  border: 1px solid var(--border-hover);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  transform: translateX(-50%) translateY(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform var(--duration-normal) var(--ease-out-expo),
+              opacity var(--duration-normal) var(--ease-out-expo);
+}
+
+.layout-dock:hover .layout-switch {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.layout-btn {
+  padding: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+  transition: all var(--duration-fast);
+}
+
+.layout-btn:hover { color: var(--text-label); }
+
+.layout-btn--on {
+  color: var(--text);
+  background: #161616;
+}
+
+.add-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-style: dashed;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  color: var(--text-muted);
+}
+
+.add-panel:hover {
+  background: var(--bg-panel);
+  border-color: var(--border-hover);
+  border-style: solid;
+  color: var(--text-label);
+}
+
+.add-panel-icon {
+  font-size: 28px;
+  font-weight: 200;
+  line-height: 1;
+  color: inherit;
+}
+
+.add-panel-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  color: inherit;
+}

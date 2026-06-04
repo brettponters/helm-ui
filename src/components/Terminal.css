@@ -1,0 +1,86 @@
+.xterm-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 6px 8px 4px;
+  background: var(--bg-panel);
+  overflow: hidden;
+  z-index: 1;
+}
+
+/* xterm injects its own viewport; let it fill the host */
+.xterm-host .xterm {
+  height: 100%;
+}
+
+.xterm-host .xterm-viewport {
+  background-color: transparent !important;
+  scrollbar-width: thin;
+  scrollbar-color: #222 transparent;
+}
+
+.xterm-host .xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+.xterm-host .xterm-viewport::-webkit-scrollbar-thumb {
+  background: #222;
+  border-radius: 3px;
+}
+.xterm-host .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* phosphor glow on the glyphs, intensity driven by the CRT GLOW setting */
+.xterm-host .xterm-rows {
+  text-shadow: 0 0 6px rgba(255, 255, 255, calc(var(--term-glow, 0.4) * 0.14));
+}
+
+/* in-terminal find box (Cmd+F) */
+.term-find {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: #0c0c0c;
+  border: 1px solid var(--border-hover);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+}
+
+.term-find-input {
+  width: 150px;
+  height: 20px;
+  padding: 0 6px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  caret-color: #fff;
+}
+
+.term-find-input::placeholder {
+  color: var(--text-dim);
+}
+
+.term-find-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  color: var(--text-label);
+  border: 1px solid transparent;
+  transition: all var(--duration-fast);
+}
+
+.term-find-btn:hover {
+  color: var(--text);
+  border-color: var(--border);
+}

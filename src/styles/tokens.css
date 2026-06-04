@@ -1,0 +1,43 @@
+:root {
+  /* Black base with hints of grey, crisp, not harsh. */
+  --bg: #000000;
+  --bg-panel: #070707;
+  --bg-panel-hover: #0d0d0d;
+  --bg-header: #050505;
+  --bg-preview: #060606;
+  --bg-drawer: #030303;
+
+  --border: #1c1c1c;
+  --border-active: #ffffff;
+  --border-hover: #333333;
+
+  --text: #f4f4f4;
+  --text-dim: #606060;
+  --text-muted: #2a2a2a;
+  --text-label: #8a8a8a;
+
+  --font-mono: 'JetBrains Mono', 'Menlo', 'SF Mono', monospace;
+  --font-ui: -apple-system, 'SF Pro Display', sans-serif;
+
+  --panel-header-h: 28px;
+  --topbar-h: 44px;
+  --drawer-w: 42%;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-expo: cubic-bezier(0.7, 0, 0.84, 0);
+  --duration-fast: 150ms;
+  --duration-normal: 280ms;
+  --duration-slow: 420ms;
+
+  --glow: 0 0 12px rgba(255, 255, 255, 0.06);
+  --glow-active: 0 0 0 1px #ffffff, 0 0 20px rgba(255, 255, 255, 0.04);
+
+  /* Themeable accent + terminal phosphor glow (driven by settings). */
+  --accent: #ffffff;
+  --term-glow: 0.4;
+}
+
+/* Theme accents, terminal foreground/cursor are themed in the xterm layer;
+   the chrome accent shifts to match. */
+:root[data-theme='amber'] { --accent: #ffb000; }
+:root[data-theme='green'] { --accent: #33ff66; }

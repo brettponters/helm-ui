@@ -1,0 +1,51 @@
+.crown-mark {
+  display: block;
+  overflow: visible;
+}
+
+/* Visible loop: the crown draws itself on, holds, then redraws, plus a soft glow. */
+.crown-mark--animate {
+  animation: crown-glow 5s ease-in-out infinite;
+}
+
+.crown-mark--animate .crown-lines ellipse,
+.crown-mark--animate .crown-lines path {
+  stroke-dasharray: 2600;
+  animation: crown-draw 5s ease-in-out infinite;
+}
+
+.crown-mark--animate .crown-pearls circle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: crown-pearl 5s ease-in-out infinite;
+}
+
+@keyframes crown-draw {
+  0%   { stroke-dashoffset: 2600; }
+  35%  { stroke-dashoffset: 0; }   /* fully drawn */
+  80%  { stroke-dashoffset: 0; }   /* hold */
+  100% { stroke-dashoffset: 2600; } /* erase, ready to redraw */
+}
+
+@keyframes crown-pearl {
+  0%, 30%   { opacity: 0; transform: scale(0.2); }
+  42%       { opacity: 1; transform: scale(1.25); }
+  48%, 78%  { opacity: 1; transform: scale(1); }
+  90%, 100% { opacity: 0; transform: scale(0.2); }
+}
+
+@keyframes crown-glow {
+  0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+  45%      { filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.5)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crown-mark--animate,
+  .crown-mark--animate .crown-lines ellipse,
+  .crown-mark--animate .crown-lines path,
+  .crown-mark--animate .crown-pearls circle {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}

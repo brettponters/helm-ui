@@ -1,0 +1,40 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# packaged app output
+release/
+
+# generated icon intermediates (build/icon.svg, icon.icns, icon-512.png are committed)
+build/icon.iconset/
+build/icon-preview.png
+
+# local Helm state
+.helm/
+
+# tooling / test artifacts
+.playwright-mcp/
+.preview-test/
+.csv-test/
+helm-*.png
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

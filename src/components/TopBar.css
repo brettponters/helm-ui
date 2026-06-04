@@ -1,0 +1,218 @@
+.topbar {
+  display: flex;
+  align-items: center;
+  height: var(--topbar-h);
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  gap: 24px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* Electron: clear the macOS traffic lights and let the bar drag the window. */
+:root[data-electron] .topbar {
+  padding-left: 88px;
+  -webkit-app-region: drag;
+}
+
+:root[data-electron] .topbar .tab,
+:root[data-electron] .topbar .tab-add,
+:root[data-electron] .topbar .tab-input,
+:root[data-electron] .topbar .action-btn,
+:root[data-electron] .topbar .tab-del,
+:root[data-electron] .topbar .tab-confirm {
+  -webkit-app-region: no-drag;
+}
+
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.logo-mark {
+  font-size: 14px;
+  color: var(--text);
+  opacity: 0.9;
+}
+
+.logo-text {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  color: var(--text);
+}
+
+.topbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 1;
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--topbar-h);
+  padding: 0 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--text-label);
+  border-right: 1px solid var(--border);
+  transition: color var(--duration-fast);
+  cursor: pointer;
+}
+
+.tab:first-child {
+  border-left: 1px solid var(--border);
+}
+
+.tab:hover {
+  color: var(--text-label);
+}
+
+.tab--active {
+  color: var(--text);
+}
+
+.tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--text);
+}
+
+.tab-name {
+  letter-spacing: 0.1em;
+}
+
+.tab-count {
+  font-size: 10px;
+  color: var(--text-label);
+  opacity: 0.75;
+}
+
+.tab--active .tab-count {
+  color: var(--text-label);
+  opacity: 1;
+}
+
+.tab-input {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  outline: none;
+  width: 80px;
+}
+
+/* delete affordance, hidden until the tab is hovered */
+.tab-del {
+  font-size: 9px;
+  color: var(--text-muted);
+  opacity: 0;
+  margin-left: 2px;
+  transition: opacity var(--duration-fast), color var(--duration-fast);
+}
+
+.tab:hover .tab-del { opacity: 1; }
+.tab-del:hover { color: var(--text); }
+
+.tab-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.1em;
+}
+
+.tab-confirm-label { color: var(--text-label); }
+
+.tab-confirm-yes,
+.tab-confirm-no {
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tab-confirm-yes { color: var(--text); }
+.tab-confirm-yes:hover { text-shadow: 0 0 8px rgba(255, 255, 255, 0.5); }
+.tab-confirm-no { color: var(--text-dim); }
+.tab-confirm-no:hover { color: var(--text); }
+
+.tab-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: var(--topbar-h);
+  font-size: 16px;
+  font-weight: 300;
+  color: var(--text-dim);
+  transition: color var(--duration-fast);
+  cursor: pointer;
+}
+
+.tab-add:hover {
+  color: var(--text);
+}
+
+.topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.broker-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.broker-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.broker-dot--on  { background: #ffffff; box-shadow: 0 0 6px rgba(255,255,255,0.5); }
+.broker-dot--off { background: #333333; }
+
+.broker-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  color: var(--text-dim);
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  font-size: 20px;
+  color: var(--text-label);
+  border: 1px solid var(--border);
+  transition: all var(--duration-fast);
+  cursor: pointer;
+}
+
+.action-btn:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
+}

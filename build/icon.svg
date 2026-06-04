@@ -1,0 +1,15 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Apple icon grid: the squircle sits inside ~10% transparent margin so it
+       renders the same size as other Dock icons (not edge-to-edge). -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#0b0b0b"/>
+  <g fill="none" stroke="#fafafa" stroke-width="46" stroke-linejoin="round" stroke-linecap="round">
+    <!-- circlet band: a ring that wraps AROUND, not above -->
+    <ellipse cx="512" cy="560" rx="252" ry="72"/>
+    <path d="M 280 536 L 344 432 L 416 506 L 512 420 L 608 506 L 680 432 L 744 536"/>
+  </g>
+  <g fill="#fafafa">
+    <circle cx="344" cy="418" r="23"/>
+    <circle cx="512" cy="400" r="25"/>
+    <circle cx="680" cy="418" r="23"/>
+  </g>
+</svg>

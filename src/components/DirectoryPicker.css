@@ -1,0 +1,124 @@
+.dirpick-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.dirpick {
+  position: absolute;
+  top: var(--panel-header-h);
+  left: 8px;
+  z-index: 100;
+  width: 340px;
+  max-width: calc(100% - 16px);
+  background: #070707;
+  border: 1px solid var(--border-hover);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
+  font-family: var(--font-mono);
+  animation: dirpick-in var(--duration-fast) var(--ease-out-expo);
+}
+
+@keyframes dirpick-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.dirpick-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dirpick-label {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--text-label);
+}
+
+.dirpick-x {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.dirpick-x:hover { color: var(--text); }
+
+.dirpick-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  background: #000;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  caret-color: #fff;
+}
+
+.dirpick-input::placeholder { color: var(--text-dim); }
+
+.dirpick-list {
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #222 transparent;
+}
+
+.dirpick-empty {
+  padding: 14px 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.dirpick-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--text-label);
+  text-align: left;
+  border-left: 2px solid transparent;
+}
+
+.dirpick-item--active {
+  background: #0f0f0f;
+  color: var(--text);
+  border-left-color: #fff;
+}
+
+.dirpick-item-icon {
+  font-size: 8px;
+  color: var(--text-dim);
+}
+.dirpick-item--active .dirpick-item-icon { color: var(--text); }
+
+.dirpick-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.dirpick-hint {
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.dirpick-use {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: #000;
+  background: #fff;
+  transition: opacity var(--duration-fast);
+}
+.dirpick-use:hover { opacity: 0.85; }
