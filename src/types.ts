@@ -5,7 +5,9 @@ export interface Teammate {
   cwd: string;
   status: 'running' | 'waiting' | 'done' | 'error';
   activeFile?: string;
-  side?: 'left' | 'right'; // which side it sits on in lead mode
+  side?: 'left' | 'right';   // which side it sits on in lead mode
+  systemPrompt?: string;     // role / system prompt configured for this teammate
+  model?: string;            // model alias (haiku|sonnet|opus) configured for this teammate
 }
 
 export type LayoutMode = 'grid' | 'lead';

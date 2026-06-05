@@ -123,13 +123,6 @@ current team.
 > letting an agent operate in freely. To keep prompts, remove that flag from the
 > `claude()` function in your shell rc (see `scripts/setup-teammates.mjs`).
 
-### Does this conflict with claude-peers?
-
-No. Helm uses its own broker and its own `HELM_BROKER_PORT` / `HELM_TEAM` /
-`HELM_TEAMMATE` environment, it never touches `CLAUDE_PEERS_PORT`. If you also run
-[claude-peers](https://github.com/louislva/claude-peers-mcp), the two stay fully
-independent.
-
 ---
 
 ## How it fits together

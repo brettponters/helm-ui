@@ -34,6 +34,7 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 const ACTIVE = TEAM !== '';
 
 let myId = null;
+let myName = TEAMMATE; // updated if the agent renames itself
 
 function log(msg) {
   // stdio MCP servers must keep stdout clean for the protocol.
@@ -84,9 +85,12 @@ Read from_id, from_name, and from_summary to understand who sent it. Reply by ca
 
 Tools:
 - list_teammates: See the other teammates on your team (id, name, cwd, summary)
-- send_message: Message a teammate by id
+- send_message: Message one teammate by name or id
+- message_team: Message EVERY teammate on your team at once (broadcast). Use this to brief or delegate to the whole team, don't message them one by one.
 - set_summary: Set a 1-2 sentence summary of what you're working on (shown in Helm and to teammates)
 - check_messages: Manually check for new messages
+- rename_me: Rename your own panel in the Helm UI
+- preview_file: Show the user a specific file in Helm's preview (e.g. an output you produced or the file you want them to look at)
 
 When you start, call set_summary so your teammates and the Helm UI know what you're doing.`,
   }
@@ -100,14 +104,25 @@ const TOOLS = [
   },
   {
     name: 'send_message',
-    description: 'Send a message to a teammate by id. It is pushed into their session immediately.',
+    description: 'Send a message to one teammate. It is pushed into their session immediately. To reach the whole team, use message_team instead.',
     inputSchema: {
       type: 'object',
       properties: {
-        to_id: { type: 'string', description: 'Teammate id (from list_teammates)' },
+        to_id: { type: 'string', description: "Teammate's name (e.g. \"teammate-02\") or id, from list_teammates" },
         message: { type: 'string', description: 'The message to send' },
       },
       required: ['to_id', 'message'],
+    },
+  },
+  {
+    name: 'message_team',
+    description: 'Message every teammate on your team at once (broadcast). Each gets it pushed into their session immediately. Use this to brief, coordinate, or delegate to the whole team in one call instead of messaging teammates one at a time.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', description: 'The message to send to all teammates on your team' },
+      },
+      required: ['message'],
     },
   },
   {
@@ -123,6 +138,26 @@ const TOOLS = [
     name: 'check_messages',
     description: 'Manually check for new messages from teammates (normally pushed automatically).',
     inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'rename_me',
+    description: "Rename your own panel in the Helm UI (e.g. to reflect what you're now working on).",
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'The new name for your panel' } },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'preview_file',
+    description: "Show the user a specific file in Helm's preview pane (it renders code, PDFs, images, and CSVs, and updates live as you edit). Use it to surface something worth looking at, an output you produced or the file you're working on, not for every file you touch.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'Path of the file to preview (relative to your working directory, or absolute)' },
+      },
+      required: ['file'],
+    },
   },
 ];
 
@@ -151,9 +186,24 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         return text(`${peers.length} teammate(s) on team "${TEAM}":\n\n${lines.join('\n\n')}`);
       }
       case 'send_message': {
-        const { to_id, message } = args;
-        const r = await brokerFetch('/send-message', { from_id: myId, to_id, text: message });
-        return r.ok ? text(`Message sent to ${to_id}.`) : text(`Failed: ${r.error}`, true);
+        const message = args.message;
+        // Accept either a peer id or a teammate name, resolve names so the lead
+        // never has to copy cryptic ids.
+        const target = String(args.to_id || '').trim();
+        let toId = target;
+        const peers = await brokerFetch('/list-peers', { team_id: TEAM });
+        if (!peers.some(p => p.id === target)) {
+          const byName = peers.filter(p => (p.agent_name || '').toLowerCase() === target.toLowerCase());
+          if (byName.length === 1) toId = byName[0].id;
+          else if (byName.length === 0) return text(`No teammate "${target}" on team "${TEAM}". Use list_teammates to see names/ids, or message_team to reach everyone.`, true);
+          else return text(`More than one teammate is named "${target}". Use their id from list_teammates.`, true);
+        }
+        const r = await brokerFetch('/send-message', { from_id: myId, to_id: toId, text: message });
+        return r.ok ? text(`Message sent to ${target}.`) : text(`Failed: ${r.error}`, true);
+      }
+      case 'message_team': {
+        const r = await brokerFetch('/broadcast', { from_id: myId, team_id: TEAM, text: args.message });
+        return text(`Broadcast to ${r.sent_to} teammate(s) on team "${TEAM}".`);
       }
       case 'set_summary': {
         await brokerFetch('/set-summary', { id: myId, summary: args.summary });
@@ -164,6 +214,20 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         if (!r.messages.length) return text('No new messages.');
         const lines = r.messages.map(m => `From ${m.from_id} (${m.sent_at}):\n${m.text}`);
         return text(`${r.messages.length} new message(s):\n\n${lines.join('\n\n---\n\n')}`);
+      }
+      case 'rename_me': {
+        const newName = String(args.name || '').trim();
+        if (!newName) return text('Provide a non-empty name.', true);
+        await brokerFetch('/ui-command', { type: 'rename', team: TEAM, teammate: myName, name: newName });
+        await brokerFetch('/set-agent-name', { id: myId, agent_name: newName });
+        myName = newName;
+        return text(`Renamed your panel to "${newName}".`);
+      }
+      case 'preview_file': {
+        const f = String(args.file || '').trim();
+        if (!f) return text('Provide a file path to preview.', true);
+        await brokerFetch('/ui-command', { type: 'open-preview', team: TEAM, teammate: myName, file: f });
+        return text(`Previewing ${f} in Helm.`);
       }
       default:
         throw new Error(`Unknown tool: ${name}`);

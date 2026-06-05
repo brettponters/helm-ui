@@ -142,37 +142,62 @@
   background: #161616;
 }
 
-.add-panel {
+/* Small, out-of-the-way "new teammate" control, so real panels keep the grid. */
+.workspace-add {
+  position: absolute;
+  bottom: 14px;
+  right: 14px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  background: rgba(7, 7, 7, 0.82);
+  border: 1px solid var(--border-hover);
+  backdrop-filter: blur(6px);
+  color: var(--text-label);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  opacity: 0.5;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+.workspace-add:hover {
+  opacity: 1;
+  color: var(--text);
+  border-color: var(--accent, #fff);
+}
+.workspace-add-icon { font-size: 14px; font-weight: 300; line-height: 1; }
+
+/* Empty team: a centered call to action filling the otherwise blank workspace. */
+.workspace-empty {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
+  gap: 12px;
+  padding: 40px 64px;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-style: dashed;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
   cursor: pointer;
   transition: all var(--duration-fast);
-  color: var(--text-muted);
 }
-
-.add-panel:hover {
-  background: var(--bg-panel);
+.workspace-empty:hover {
   border-color: var(--border-hover);
   border-style: solid;
   color: var(--text-label);
 }
-
-.add-panel-icon {
-  font-size: 28px;
-  font-weight: 200;
-  line-height: 1;
-  color: inherit;
-}
-
-.add-panel-label {
+.workspace-empty-icon { font-size: 32px; font-weight: 200; line-height: 1; color: inherit; }
+.workspace-empty-label {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.2em;
   color: inherit;

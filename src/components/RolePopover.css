@@ -1,0 +1,213 @@
+.rolemodal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.62);
+  animation: rolemodal-fade var(--duration-fast) var(--ease-out-expo);
+}
+
+@keyframes rolemodal-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.rolemodal {
+  width: min(640px, 96vw);
+  max-height: min(82vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: #070707;
+  border: 1px solid var(--border-hover);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8);
+  font-family: var(--font-mono);
+  animation: rolemodal-in var(--duration-normal) var(--ease-out-expo);
+}
+
+@keyframes rolemodal-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── header ─────────────────────────────────────────────────────────── */
+.rolemodal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.rolemodal-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: var(--text);
+}
+.rolemodal-name {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+}
+.rolemodal-x {
+  margin-left: auto;
+  color: var(--text-dim);
+  transition: color var(--duration-fast);
+}
+.rolemodal-x:hover { color: var(--text); }
+
+/* ── model row ──────────────────────────────────────────────────────── */
+.rolemodal-modelrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.rolemodal-rowlabel {
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.rolemodal-models {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+.rolemodal-model {
+  flex: 1;
+  padding: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--text-label);
+  border: 1px solid var(--border);
+  transition: all var(--duration-fast);
+}
+.rolemodal-model:hover { color: var(--text); border-color: var(--border-hover); }
+.rolemodal-model--on {
+  color: #000;
+  background: var(--accent, #fff);
+  border-color: var(--accent, #fff);
+}
+
+/* ── body: scrollable library + editor ──────────────────────────────── */
+.rolemodal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+  scrollbar-width: thin;
+  scrollbar-color: #222 transparent;
+}
+
+.rolemodal-library { margin-bottom: 14px; }
+
+.rolemodal-group { margin-bottom: 12px; }
+.rolemodal-group:last-child { margin-bottom: 0; }
+
+.rolemodal-grouplabel {
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: var(--text-dim);
+  margin-bottom: 7px;
+}
+
+.rolemodal-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rolemodal-chip {
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-label);
+  border: 1px solid var(--border);
+  transition: all var(--duration-fast);
+}
+.rolemodal-chip:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
+  background: #0f0f0f;
+}
+.rolemodal-chip--on {
+  color: #000;
+  background: var(--accent, #fff);
+  border-color: var(--accent, #fff);
+}
+
+.rolemodal-editor {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.rolemodal-editor .rolemodal-rowlabel { display: block; margin-bottom: 7px; }
+
+.rolemodal-area {
+  display: block;
+  width: 100%;
+  height: 130px;
+  padding: 10px;
+  resize: vertical;
+  background: #000;
+  border: 1px solid var(--border);
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  caret-color: #fff;
+  scrollbar-width: thin;
+  scrollbar-color: #222 transparent;
+}
+.rolemodal-area::placeholder { color: var(--text-dim); }
+
+/* ── footer ─────────────────────────────────────────────────────────── */
+.rolemodal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.rolemodal-count {
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+.rolemodal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.rolemodal-clear {
+  padding: 6px 12px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  transition: all var(--duration-fast);
+}
+.rolemodal-clear:hover { color: var(--text); border-color: var(--border-hover); }
+.rolemodal-save {
+  padding: 6px 14px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: #000;
+  background: #fff;
+  transition: opacity var(--duration-fast);
+}
+.rolemodal-save:hover { opacity: 0.85; }
+.rolemodal-save:disabled { opacity: 0.3; cursor: default; }

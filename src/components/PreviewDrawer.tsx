@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, X } from 'lucide-react';
+import { Eye, X, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import { FileTree, buildTree, type FileEntry } from './FileTree';
 import './PreviewDrawer.css';
 
 const BROKER = 'http://127.0.0.1:7900';
 const TREE_POLL_MS = 4000;
 const FILE_POLL_MS = 2000;
-const RECENT_MS = 10 * 60 * 1000;
 
 type PreviewKind = 'text' | 'pdf' | 'image';
 
@@ -24,6 +23,10 @@ interface PreviewDrawerProps {
   open: boolean;
   cwd: string | null;
   teammateName?: string;
+  /** The file the agent (or user) asked to preview. null = browse mode. */
+  file: string | null;
+  /** Bumped on every open/request so the same file can be re-requested. */
+  requestKey: number;
   onClose: () => void;
 }
 
@@ -45,13 +48,13 @@ function ancestors(relPath: string): string[] {
   return out;
 }
 
-export function PreviewDrawer({ open, cwd, teammateName, onClose }: PreviewDrawerProps) {
+export function PreviewDrawer({ open, cwd, teammateName, file, requestKey, onClose }: PreviewDrawerProps) {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [userPicked, setUserPicked] = useState(false);
   const [meta, setMeta] = useState<FileMeta | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [empty, setEmpty] = useState(false);
+  const [treeOpen, setTreeOpen] = useState(false); // file tree hidden by default
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape' && open) onClose(); }
@@ -59,15 +62,14 @@ export function PreviewDrawer({ open, cwd, teammateName, onClose }: PreviewDrawe
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  // Reset when the drawer opens for a different teammate.
+  // Each open / agent request decides what's shown: the named file, or browse mode.
   useEffect(() => {
     if (!open) return;
-    setUserPicked(false);
-    setSelected(null);
-    setMeta(null);
-  }, [open, cwd]);
+    setSelected(file);
+    setTreeOpen(!file); // a named file shows it; no file => open the browser
+  }, [open, requestKey, file]);
 
-  // Poll the teammate's file list.
+  // Poll the file list (only needed for manual browsing).
   useEffect(() => {
     if (!open || !cwd) return;
     let cancelled = false;
@@ -83,32 +85,23 @@ export function PreviewDrawer({ open, cwd, teammateName, onClose }: PreviewDrawe
     return () => { cancelled = true; clearInterval(id); };
   }, [open, cwd]);
 
-  const recent = useMemo(() => {
-    if (!files.length) return null;
-    return files.reduce((a, b) => (b.mtime > a.mtime ? b : a));
-  }, [files]);
-  const recentPath = recent && Date.now() - recent.mtime < RECENT_MS ? recent.relPath : null;
-
-  // What's shown: the user's pick, else the most-recently-changed file (follows the agent).
-  const effective = userPicked && selected ? selected : recent?.relPath ?? null;
-
   // Auto-expand the folders leading to the shown file.
   useEffect(() => {
-    if (!effective) return;
+    if (!selected) return;
     setExpanded(prev => {
       const next = new Set(prev);
-      for (const a of ancestors(effective)) next.add(a);
+      for (const a of ancestors(selected)) next.add(a);
       return next;
     });
-  }, [effective]);
+  }, [selected]);
 
   // Poll the shown file's content (live updates as the agent edits it).
   useEffect(() => {
-    if (!open || !cwd || !effective) { setMeta(null); return; }
+    if (!open || !cwd || !selected) { setMeta(null); return; }
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch(`${BROKER}/filemeta?cwd=${encodeURIComponent(cwd!)}&path=${encodeURIComponent(effective!)}`, { signal: AbortSignal.timeout(5000) });
+        const res = await fetch(`${BROKER}/filemeta?cwd=${encodeURIComponent(cwd!)}&path=${encodeURIComponent(selected!)}`, { signal: AbortSignal.timeout(5000) });
         const data: { file: FileMeta | null } = await res.json();
         if (!cancelled) setMeta(data.file);
       } catch { /* keep last */ }
@@ -116,17 +109,17 @@ export function PreviewDrawer({ open, cwd, teammateName, onClose }: PreviewDrawe
     load();
     const id = setInterval(load, FILE_POLL_MS);
     return () => { cancelled = true; clearInterval(id); };
-  }, [open, cwd, effective]);
+  }, [open, cwd, selected]);
 
   const tree = useMemo(() => buildTree(files), [files]);
   const lines = meta?.content != null ? meta.content.replace(/\n$/, '').split('\n') : [];
   const fileUrl = meta && cwd ? `${BROKER}/file?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(meta.relPath)}` : '';
   const isCsv = !!meta && meta.kind === 'text' && /\.(csv|tsv)$/i.test(meta.name);
 
-  function toggle(path: string) {
+  function toggleFolder(path: string) {
     setExpanded(prev => { const n = new Set(prev); n.has(path) ? n.delete(path) : n.add(path); return n; });
   }
-  function pick(path: string) { setSelected(path); setUserPicked(true); }
+  function pick(path: string) { setSelected(path); setTreeOpen(false); }
 
   return (
     <>
@@ -134,6 +127,13 @@ export function PreviewDrawer({ open, cwd, teammateName, onClose }: PreviewDrawe
       <div className={`drawer ${open ? 'drawer--open' : ''}`} aria-hidden={!open}>
         <div className="drawer-header">
           <div className="drawer-header-left">
+            <button
+              className={`drawer-tree-toggle ${treeOpen ? 'drawer-tree-toggle--on' : ''}`}
+              title={treeOpen ? 'Hide files' : 'Browse files'}
+              onClick={() => setTreeOpen(o => !o)}
+            >
+              {treeOpen ? <PanelLeftClose size={16} strokeWidth={1.75} /> : <PanelLeftOpen size={16} strokeWidth={1.75} />}
+            </button>
             <span className="drawer-icon"><Eye size={15} strokeWidth={1.75} /></span>
             <span className="drawer-title">PREVIEW</span>
             {teammateName && <span className="drawer-agent">{teammateName}</span>}
@@ -142,34 +142,34 @@ export function PreviewDrawer({ open, cwd, teammateName, onClose }: PreviewDrawe
         </div>
 
         <div className="drawer-body">
-          <aside className="drawer-tree">
-            {files.length === 0 ? (
-              <div className="tree-empty">{empty ? 'No files' : 'Loading…'}</div>
-            ) : (
-              <FileTree
-                nodes={tree}
-                selected={effective}
-                recentPath={recentPath}
-                expanded={expanded}
-                onToggle={toggle}
-                onSelect={pick}
-              />
-            )}
-          </aside>
+          {treeOpen && (
+            <aside className="drawer-tree">
+              {files.length === 0 ? (
+                <div className="tree-empty">{empty ? 'No files' : 'Loading…'}</div>
+              ) : (
+                <FileTree
+                  nodes={tree}
+                  selected={selected}
+                  recentPath={null}
+                  expanded={expanded}
+                  onToggle={toggleFolder}
+                  onSelect={pick}
+                />
+              )}
+            </aside>
+          )}
 
           <section className="drawer-view">
             {!meta ? (
               <div className="drawer-empty">
                 <span className="drawer-empty-title">Nothing to show</span>
-                <span className="drawer-empty-sub">Pick a file on the left, or wait for a teammate to work.</span>
+                <span className="drawer-empty-sub">An agent opens a file here with the preview tool, or open the file list (top-left) to browse.</span>
               </div>
             ) : (
               <>
                 <div className="drawer-toolbar">
                   <span className="toolbar-file" title={meta.relPath}>{meta.relPath}</span>
-                  <span className="toolbar-lang">
-                    {meta.kind === 'pdf' ? 'PDF' : meta.kind === 'image' ? 'IMAGE' : isCsv ? 'CSV' : langOf(meta.name)}
-                  </span>
+                  <span className="toolbar-lang">{meta.kind === 'pdf' ? 'PDF' : meta.kind === 'image' ? 'IMAGE' : isCsv ? 'CSV' : langOf(meta.name)}</span>
                   <span className="toolbar-live">● {agoOf(meta.mtime)}{meta.truncated ? ' · truncated' : ` · ${fmtSize(meta.size)}`}</span>
                 </div>
                 <div className="drawer-content">

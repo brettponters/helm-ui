@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Team, Teammate, LayoutMode } from '../types';
 import type { Peer } from '../hooks/usePeers';
+import type { PreviewRequest } from '../App';
 import { matchPeerToTeammate } from '../hooks/usePeers';
 import { useGridLayout } from '../hooks/useGridLayout';
 import { TerminalPanel } from './TerminalPanel';
@@ -11,10 +12,9 @@ interface TeamWorkspaceProps {
   team: Team;
   peers: Peer[];
   onUpdateTeam: (team: Team) => void;
+  previewRequest?: PreviewRequest | null;
 }
 
-const ADD_LEFT = '__add_left__';
-const ADD_RIGHT = '__add_right__';
 const MIN_CENTER = 0.25;
 const MAX_CENTER = 0.8;
 
@@ -25,9 +25,8 @@ function sideOf(t: Teammate, i: number): 'left' | 'right' {
 }
 
 // Lead mode: the lead spans the center column; every other teammate sits in its
-// assigned side column, with a "new teammate" button at the bottom of each side.
-// Children stay in array order so React never reparents a panel, so the running
-// shells survive a layout switch.
+// assigned side column. Children stay in array order so React never reparents a
+// panel, so the running shells survive a layout switch.
 function leadPlacement(teammates: Teammate[], leadId: string): { placement: Placement; rows: number } {
   const nonLead = teammates.filter(t => t.id !== leadId);
   const left: string[] = [];
@@ -37,18 +36,18 @@ function leadPlacement(teammates: Teammate[], leadId: string): { placement: Plac
   const placement: Placement = {};
   left.forEach((id, k) => { placement[id] = { gridColumn: 1, gridRow: k + 1 }; });
   right.forEach((id, k) => { placement[id] = { gridColumn: 3, gridRow: k + 1 }; });
-  placement[ADD_LEFT] = { gridColumn: 1, gridRow: left.length + 1 };
-  placement[ADD_RIGHT] = { gridColumn: 3, gridRow: right.length + 1 };
 
-  const rows = Math.max(left.length, right.length) + 1; // +1 row for the add buttons
+  const rows = Math.max(left.length, right.length, 1);
   placement[leadId] = { gridColumn: 2, gridRow: `1 / span ${rows}` };
   return { placement, rows };
 }
 
-export function TeamWorkspace({ team, peers, onUpdateTeam }: TeamWorkspaceProps) {
+export function TeamWorkspace({ team, peers, onUpdateTeam, previewRequest }: TeamWorkspaceProps) {
   const [activeId, setActiveId] = useState<string | null>(team.teammates[0]?.id ?? null);
-  const [preview, setPreview] = useState<{ open: boolean; teammateId: string | null; cwd: string | null; name: string }>({
-    open: false, teammateId: null, cwd: null, name: '',
+  const lastPreviewNonce = useRef<number | null>(null);
+  const previewKey = useRef(0);
+  const [preview, setPreview] = useState<{ open: boolean; teammateId: string | null; cwd: string | null; name: string; file: string | null; key: number }>({
+    open: false, teammateId: null, cwd: null, name: '', file: null, key: 0,
   });
   const [centerRatio, setCenterRatio] = useState(team.layout?.centerRatio ?? 0.5);
   const ratioRef = useRef(centerRatio);
@@ -61,7 +60,7 @@ export function TeamWorkspace({ team, peers, onUpdateTeam }: TeamWorkspaceProps)
     : team.teammates[0]?.id;
   const isLeadMode = mode === 'lead' && !!leadId && team.teammates.length > 0;
 
-  const { cols, rows: gridRows } = useGridLayout(team.teammates.length + 1);
+  const { cols, rows: gridRows } = useGridLayout(Math.max(1, team.teammates.length));
 
   function patchLayout(patch: Partial<NonNullable<Team['layout']>>) {
     const base = team.layout ?? { mode: 'grid' as LayoutMode };
@@ -91,7 +90,7 @@ export function TeamWorkspace({ team, peers, onUpdateTeam }: TeamWorkspaceProps)
     const teammates = team.teammates.filter(t => t.id !== id);
     onUpdateTeam({ ...team, teammates });
     if (activeId === id) setActiveId(teammates[0]?.id ?? null);
-    if (preview.teammateId === id) setPreview({ open: false, teammateId: null, cwd: null, name: '' });
+    if (preview.teammateId === id) setPreview({ open: false, teammateId: null, cwd: null, name: '', file: null, key: 0 });
   }
 
   // A team works in one project: setting a directory moves the whole team there.
@@ -111,10 +110,23 @@ export function TeamWorkspace({ team, peers, onUpdateTeam }: TeamWorkspaceProps)
     patchLayout({ leadId: cleared ? undefined : id, mode: cleared ? mode : 'lead' });
   }
 
-  function openPreview(teammate: Teammate) {
-    // Show the real file this teammate is working on, derived live from its cwd.
-    setPreview({ open: true, teammateId: teammate.id, cwd: teammate.cwd, name: teammate.name });
+  function openPreview(teammate: Teammate, file: string | null = null) {
+    previewKey.current += 1;
+    setPreview({ open: true, teammateId: teammate.id, cwd: teammate.cwd, name: teammate.name, file, key: previewKey.current });
   }
+
+  // An agent asked (via MCP) to preview a specific file in its panel.
+  useEffect(() => {
+    if (!previewRequest || previewRequest.team !== team.id) return;
+    if (lastPreviewNonce.current === previewRequest.nonce) return;
+    lastPreviewNonce.current = previewRequest.nonce;
+    const mate = team.teammates.find(t => t.name === previewRequest.teammate);
+    if (mate) {
+      setActiveId(mate.id);
+      openPreview(mate, previewRequest.file);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewRequest, team.id]);
 
   // ── Resize the center column by dragging a divider ─────────────────────────
   function startResize(which: 'left' | 'right', e: React.PointerEvent) {
@@ -167,29 +179,12 @@ export function TeamWorkspace({ team, peers, onUpdateTeam }: TeamWorkspaceProps)
               onSetLead={() => setLead(teammate.id)}
               onRename={name => updateTeammate(teammate.id, { name })}
               onSetCwd={cwd => setTeamCwd(cwd)}
+              onSetRole={(role, model) => updateTeammate(teammate.id, { systemPrompt: role || undefined, model: model || undefined })}
               onOpenPreview={() => openPreview(teammate)}
               onRemove={() => removeTeammate(teammate.id)}
             />
           </div>
         ))}
-
-        {isLeadMode ? (
-          <>
-            <button className="add-panel" style={placement[ADD_LEFT]} onClick={() => addTeammate('left')}>
-              <span className="add-panel-icon">+</span>
-              <span className="add-panel-label">NEW TEAMMATE</span>
-            </button>
-            <button className="add-panel" style={placement[ADD_RIGHT]} onClick={() => addTeammate('right')}>
-              <span className="add-panel-icon">+</span>
-              <span className="add-panel-label">NEW TEAMMATE</span>
-            </button>
-          </>
-        ) : (
-          <button className="add-panel" onClick={() => addTeammate()}>
-            <span className="add-panel-icon">+</span>
-            <span className="add-panel-label">NEW TEAMMATE</span>
-          </button>
-        )}
 
         {isLeadMode && (
           <>
@@ -208,6 +203,20 @@ export function TeamWorkspace({ team, peers, onUpdateTeam }: TeamWorkspaceProps)
           </>
         )}
       </div>
+
+      {team.teammates.length === 0 ? (
+        // Empty team: one clear call to action filling the otherwise blank space.
+        <button className="workspace-empty" onClick={() => addTeammate()}>
+          <span className="workspace-empty-icon">+</span>
+          <span className="workspace-empty-label">ADD YOUR FIRST TEAMMATE</span>
+        </button>
+      ) : (
+        // Otherwise a small, out-of-the-way control so panels keep the real estate.
+        <button className="workspace-add" onClick={() => addTeammate()} title="New teammate">
+          <span className="workspace-add-icon">+</span>
+          <span className="workspace-add-label">TEAMMATE</span>
+        </button>
+      )}
 
       <div className="layout-dock">
         <div className="layout-switch">
@@ -236,6 +245,8 @@ export function TeamWorkspace({ team, peers, onUpdateTeam }: TeamWorkspaceProps)
         open={preview.open}
         cwd={preview.cwd}
         teammateName={preview.name}
+        file={preview.file}
+        requestKey={preview.key}
         onClose={() => setPreview(p => ({ ...p, open: false }))}
       />
     </div>

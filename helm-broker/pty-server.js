@@ -21,11 +21,60 @@
 import { WebSocketServer } from 'ws';
 import pty from 'node-pty';
 import os from 'os';
+import { execFile } from 'child_process';
 
 const PORT = parseInt(process.env.HELM_PTY_PORT || '7901', 10);
 const BROKER_PORT = parseInt(process.env.HELM_BROKER_PORT || process.env.CLAUDE_PEERS_PORT || '7900', 10);
 const DEFAULT_SHELL = process.env.SHELL || '/bin/zsh';
 const HOME = os.homedir();
+const CLAUDE_SCAN_MS = 1500; // how often to check which panels have a live Claude
+
+// Each live panel: { ws, pid (shell), claudeActive }. One scan walks the whole
+// process table and tells each panel whether a Claude CLI is running under its
+// shell, so the UI knows when Claude Code is active there. The Claude CLI shows
+// up in `ps` as a process whose command is `claude …` (verified on this machine).
+const panels = new Set();
+
+function looksLikeClaude(args) {
+  return /(^|\/)claude(\s|$)/.test(args);
+}
+
+function scanClaude() {
+  if (panels.size === 0) return;
+  execFile('ps', ['-axo', 'pid=,ppid=,args='], { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+    if (err) return;
+    const kids = new Map();   // ppid -> [pid]
+    const argv = new Map();   // pid  -> args
+    for (const line of stdout.split('\n')) {
+      const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
+      if (!m) continue;
+      const pid = +m[1], ppid = +m[2];
+      argv.set(pid, m[3]);
+      if (!kids.has(ppid)) kids.set(ppid, []);
+      kids.get(ppid).push(pid);
+    }
+    const hasClaude = (root) => {
+      const stack = [...(kids.get(root) || [])];
+      while (stack.length) {
+        const pid = stack.pop();
+        if (looksLikeClaude(argv.get(pid) || '')) return true;
+        for (const c of kids.get(pid) || []) stack.push(c);
+      }
+      return false;
+    };
+    for (const p of panels) {
+      const active = p.pid != null && hasClaude(p.pid);
+      if (active !== p.claudeActive) {
+        p.claudeActive = active;
+        if (p.ws.readyState === p.ws.OPEN) {
+          p.ws.send(JSON.stringify({ type: 'status', claudeActive: active }));
+        }
+      }
+    }
+  });
+}
+
+setInterval(scanClaude, CLAUDE_SCAN_MS).unref?.();
 
 // Browser security: a WebSocket here spawns a real shell, so only accept
 // connections from the Helm UI. Browsers always send Origin on the WS handshake
@@ -97,6 +146,10 @@ wss.on('connection', (ws, req) => {
     return;
   }
 
+  // Track this panel so the scanner can report when Claude is live in it.
+  const panel = { ws, pid: term.pid, claudeActive: false };
+  panels.add(panel);
+
   const onData = term.onData(data => {
     if (ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify({ type: 'output', data }));
@@ -121,6 +174,7 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
+    panels.delete(panel);
     onData.dispose();
     onExit.dispose();
     try { term.kill(); } catch { /* already dead */ }

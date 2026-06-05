@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
@@ -15,8 +15,15 @@ interface TerminalProps {
   command?: string;
   name?: string;
   team?: string;
+  /** Called when a Claude process starts/stops in this panel's shell. */
+  onClaudeActive?: (active: boolean) => void;
   /** Bumped by the parent to force a fresh shell (e.g. after a panel restart). */
   sessionKey?: string | number;
+}
+
+export interface TerminalHandle {
+  /** Type a command into the live shell (as if the user typed it). */
+  runCommand: (cmd: string) => void;
 }
 
 // Shared ANSI palette (muted, terminal-native). Foreground/cursor/selection are
@@ -59,16 +66,31 @@ const SEARCH_DECORATIONS = {
   activeMatchBackground:     'rgba(255,255,255,0.45)',
 };
 
-export function Terminal({ cwd, command, name, team, sessionKey }: TerminalProps) {
+export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
+  { cwd, command, name, team, onClaudeActive, sessionKey },
+  ref,
+) {
   const prefs = usePrefs();
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
+
+  const onClaudeActiveRef = useRef(onClaudeActive);
+  onClaudeActiveRef.current = onClaudeActive;
 
   const hostRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Let the panel type a command into the live shell (e.g. on Save → run it).
+  useImperativeHandle(ref, () => ({
+    runCommand: (cmd: string) => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: 'input', data: /[\r\n]$/.test(cmd) ? cmd : cmd + '\r' }));
+    },
+  }), []);
 
   const [findOpen, setFindOpen] = useState(false);
   const [findValue, setFindValue] = useState('');
@@ -143,6 +165,8 @@ export function Terminal({ cwd, command, name, team, sessionKey }: TerminalProps
       try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === 'output' && msg.data != null) {
         term.write(msg.data);
+      } else if (msg.type === 'status') {
+        onClaudeActiveRef.current?.(!!(msg as { claudeActive?: boolean }).claudeActive);
       } else if (msg.type === 'exit') {
         term.write(`\r\n\x1b[2m[process exited${msg.code != null ? ` (${msg.code})` : ''}]\x1b[0m\r\n`);
       }
@@ -239,4 +263,4 @@ export function Terminal({ cwd, command, name, team, sessionKey }: TerminalProps
       )}
     </div>
   );
-}
+});

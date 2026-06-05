@@ -18,7 +18,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  width: clamp(640px, 58%, 1040px);
+  width: clamp(480px, 44%, 820px);
   background: var(--bg-drawer);
   border-left: 1px solid var(--border);
   z-index: 50;
@@ -145,6 +145,28 @@
   letter-spacing: 0.18em;
   color: var(--text);
   flex-shrink: 0;
+}
+
+.drawer-tree-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--text-dim);
+  border: 1px solid transparent;
+  transition: all var(--duration-fast);
+  flex-shrink: 0;
+}
+
+.drawer-tree-toggle:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.drawer-tree-toggle--on {
+  color: var(--text);
+  background: #161616;
 }
 
 .drawer-agent {

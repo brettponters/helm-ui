@@ -33,10 +33,14 @@ exports.default = async function afterPack(context) {
     }
   }
 
-  try {
-    execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], { stdio: 'inherit' });
-    console.log('[helm afterPack] ad-hoc signed Helm.app');
-  } catch (e) {
-    console.warn(`[helm afterPack] ad-hoc sign failed: ${e.message}`);
+  // Ad-hoc sign only when electron-builder isn't doing real Developer ID signing
+  // (i.e. no cert available). With a cert, electron-builder signs + we notarize.
+  if (process.env.CSC_IDENTITY_AUTO_DISCOVERY === 'false') {
+    try {
+      execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], { stdio: 'inherit' });
+      console.log('[helm afterPack] ad-hoc signed Helm.app (no Developer ID cert)');
+    } catch (e) {
+      console.warn(`[helm afterPack] ad-hoc sign failed: ${e.message}`);
+    }
   }
 };

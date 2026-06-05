@@ -30,6 +30,7 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.1",
     "@eslint/js": "^10.0.1",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^24.12.3",
@@ -51,6 +52,7 @@
     "productName": "Helm",
     "asar": false,
     "afterPack": "electron/after-pack.cjs",
+    "afterSign": "electron/notarize.cjs",
     "directories": {
       "output": "release"
     },
@@ -66,7 +68,11 @@
       ],
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns",
-      "identity": null
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "notarize": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     }
   }
 }

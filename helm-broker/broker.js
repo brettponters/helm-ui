@@ -215,6 +215,8 @@ const peers = new Map();      // id -> Peer
 const messages = [];           // Message[]
 let msgCounter = 0;
 let workspace = loadWorkspace();
+const uiCommands = [];          // commands an agent (via MCP) asks the UI to run
+let cmdCounter = 0;
 
 function uid() {
   return crypto.randomBytes(4).toString('hex');
@@ -275,6 +277,30 @@ const handlers = {
     peer.summary   = body.summary || '';
     peer.last_seen = now();
     return { ok: true };
+  },
+
+  // An agent renamed itself, keep its peer identity in sync so the UI still
+  // matches it to the (now-renamed) panel.
+  'POST /set-agent-name'(body) {
+    const peer = peers.get(body.id);
+    if (!peer) return { error: 'not_found' };
+    peer.agent_name = body.agent_name || peer.agent_name;
+    peer.last_seen  = now();
+    return { ok: true };
+  },
+
+  // An agent asks the Helm UI to do something (open its preview, rename itself…).
+  'POST /ui-command'(body) {
+    if (!body || !body.type) return { error: 'bad_request' };
+    uiCommands.push({ id: ++cmdCounter, ...body, at: now() });
+    if (uiCommands.length > 200) uiCommands.splice(0, uiCommands.length - 200);
+    return { ok: true, id: cmdCounter };
+  },
+
+  // The UI drains pending commands (returns them and clears).
+  'GET /ui-commands'() {
+    const pending = uiCommands.splice(0, uiCommands.length);
+    return { commands: pending };
   },
 
   'POST /set-team'(body) {

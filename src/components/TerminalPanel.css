@@ -215,6 +215,17 @@
   color: var(--text);
 }
 
+/* A teammate with a role set: the mask glows so it reads as "in character". */
+.panel-btn--on {
+  color: var(--accent, #fff);
+  border-color: var(--border);
+}
+.panel-btn--on:hover {
+  color: var(--accent, #fff);
+  border-color: var(--border-hover);
+}
+
+
 .panel-output {
   flex: 1;
   overflow-y: auto;

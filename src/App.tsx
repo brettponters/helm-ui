@@ -6,13 +6,40 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { PrefsContext } from './context/PrefsContext';
 import { usePeers } from './hooks/usePeers';
 import { useWorkspace } from './hooks/useWorkspace';
+import { useUiCommands } from './hooks/useUiCommands';
 import './styles/global.css';
 import './App.css';
+
+export interface PreviewRequest { team: string; teammate: string; file: string | null; nonce: number; }
 
 export default function App() {
   const { workspace, save } = useWorkspace();
   const { peers, connected } = usePeers();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null);
+
+  // Apply commands an agent issued via MCP (rename itself, open its preview).
+  useUiCommands(cmds => {
+    if (!workspace) return;
+    let next = workspace;
+    let changed = false;
+    for (const c of cmds) {
+      if (c.type === 'rename' && c.team && c.teammate && c.name) {
+        next = {
+          ...next,
+          teams: next.teams.map(t => t.id === c.team
+            ? { ...t, teammates: t.teammates.map(m => m.name === c.teammate ? { ...m, name: c.name! } : m) }
+            : t),
+        };
+        changed = true;
+      } else if (c.type === 'open-preview' && c.team && c.teammate) {
+        next = { ...next, activeTeamId: c.team };
+        changed = true;
+        setPreviewRequest({ team: c.team, teammate: c.teammate, file: c.file ?? null, nonce: c.id });
+      }
+    }
+    if (changed) save(next);
+  });
 
   // Apply the active theme + glow to the document so all CSS-driven surfaces
   // (panels, top bar, drawers) restyle. Terminals read prefs via context.
@@ -79,7 +106,12 @@ export default function App() {
             key={team.id}
             style={{ display: team.id === activeTeamId ? 'contents' : 'none' }}
           >
-            <TeamWorkspace team={team} peers={peers} onUpdateTeam={updateTeam} />
+            <TeamWorkspace
+              team={team}
+              peers={peers}
+              onUpdateTeam={updateTeam}
+              previewRequest={previewRequest}
+            />
           </div>
         ))}
 
