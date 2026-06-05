@@ -10,15 +10,12 @@ import { useUiCommands } from './hooks/useUiCommands';
 import './styles/global.css';
 import './App.css';
 
-export interface PreviewRequest { team: string; teammate: string; file: string | null; nonce: number; }
-
 export default function App() {
   const { workspace, save } = useWorkspace();
   const { peers, connected } = usePeers();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null);
 
-  // Apply commands an agent issued via MCP (rename itself, open its preview).
+  // Apply commands an agent issued via MCP (rename its own panel).
   useUiCommands(cmds => {
     if (!workspace) return;
     let next = workspace;
@@ -32,10 +29,6 @@ export default function App() {
             : t),
         };
         changed = true;
-      } else if (c.type === 'open-preview' && c.team && c.teammate) {
-        next = { ...next, activeTeamId: c.team };
-        changed = true;
-        setPreviewRequest({ team: c.team, teammate: c.teammate, file: c.file ?? null, nonce: c.id });
       }
     }
     if (changed) save(next);
@@ -110,7 +103,6 @@ export default function App() {
               team={team}
               peers={peers}
               onUpdateTeam={updateTeam}
-              previewRequest={previewRequest}
             />
           </div>
         ))}

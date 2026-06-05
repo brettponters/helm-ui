@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Team, Teammate, LayoutMode } from '../types';
 import type { Peer } from '../hooks/usePeers';
-import type { PreviewRequest } from '../App';
 import { matchPeerToTeammate } from '../hooks/usePeers';
 import { useGridLayout } from '../hooks/useGridLayout';
 import { TerminalPanel } from './TerminalPanel';
@@ -12,7 +11,6 @@ interface TeamWorkspaceProps {
   team: Team;
   peers: Peer[];
   onUpdateTeam: (team: Team) => void;
-  previewRequest?: PreviewRequest | null;
 }
 
 const MIN_CENTER = 0.25;
@@ -42,9 +40,8 @@ function leadPlacement(teammates: Teammate[], leadId: string): { placement: Plac
   return { placement, rows };
 }
 
-export function TeamWorkspace({ team, peers, onUpdateTeam, previewRequest }: TeamWorkspaceProps) {
+export function TeamWorkspace({ team, peers, onUpdateTeam }: TeamWorkspaceProps) {
   const [activeId, setActiveId] = useState<string | null>(team.teammates[0]?.id ?? null);
-  const lastPreviewNonce = useRef<number | null>(null);
   const previewKey = useRef(0);
   const [preview, setPreview] = useState<{ open: boolean; teammateId: string | null; cwd: string | null; name: string; file: string | null; key: number }>({
     open: false, teammateId: null, cwd: null, name: '', file: null, key: 0,
@@ -114,19 +111,6 @@ export function TeamWorkspace({ team, peers, onUpdateTeam, previewRequest }: Tea
     previewKey.current += 1;
     setPreview({ open: true, teammateId: teammate.id, cwd: teammate.cwd, name: teammate.name, file, key: previewKey.current });
   }
-
-  // An agent asked (via MCP) to preview a specific file in its panel.
-  useEffect(() => {
-    if (!previewRequest || previewRequest.team !== team.id) return;
-    if (lastPreviewNonce.current === previewRequest.nonce) return;
-    lastPreviewNonce.current = previewRequest.nonce;
-    const mate = team.teammates.find(t => t.name === previewRequest.teammate);
-    if (mate) {
-      setActiveId(mate.id);
-      openPreview(mate, previewRequest.file);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewRequest, team.id]);
 
   // ── Resize the center column by dragging a divider ─────────────────────────
   function startResize(which: 'left' | 'right', e: React.PointerEvent) {

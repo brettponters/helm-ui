@@ -90,7 +90,6 @@ Tools:
 - set_summary: Set a 1-2 sentence summary of what you're working on (shown in Helm and to teammates)
 - check_messages: Manually check for new messages
 - rename_me: Rename your own panel in the Helm UI
-- preview_file: Show the user a specific file in Helm's preview (e.g. an output you produced or the file you want them to look at)
 
 When you start, call set_summary so your teammates and the Helm UI know what you're doing.`,
   }
@@ -146,17 +145,6 @@ const TOOLS = [
       type: 'object',
       properties: { name: { type: 'string', description: 'The new name for your panel' } },
       required: ['name'],
-    },
-  },
-  {
-    name: 'preview_file',
-    description: "Show the user a specific file in Helm's preview pane (it renders code, PDFs, images, and CSVs, and updates live as you edit). Use it to surface something worth looking at, an output you produced or the file you're working on, not for every file you touch.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        file: { type: 'string', description: 'Path of the file to preview (relative to your working directory, or absolute)' },
-      },
-      required: ['file'],
     },
   },
 ];
@@ -222,12 +210,6 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         await brokerFetch('/set-agent-name', { id: myId, agent_name: newName });
         myName = newName;
         return text(`Renamed your panel to "${newName}".`);
-      }
-      case 'preview_file': {
-        const f = String(args.file || '').trim();
-        if (!f) return text('Provide a file path to preview.', true);
-        await brokerFetch('/ui-command', { type: 'open-preview', team: TEAM, teammate: myName, file: f });
-        return text(`Previewing ${f} in Helm.`);
       }
       default:
         throw new Error(`Unknown tool: ${name}`);
