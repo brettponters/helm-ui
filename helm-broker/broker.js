@@ -278,6 +278,20 @@ setInterval(cleanStale, HEARTBEAT_INTERVAL);
 const handlers = {
 
   'POST /register'(body) {
+    // Evict ghosts on arrival: a relaunch in the same panel registers the
+    // same team+name, and a prior registration whose process is gone must
+    // not linger, messages route by peer id, and a ghost that wins name
+    // resolution silently swallows the team's mail.
+    const teamId = body.team_id || 'default';
+    if (body.agent_name) {
+      for (const [pid, peer] of [...peers.entries()]) {
+        if (peer.team_id === teamId && peer.agent_name === body.agent_name && !isAlive(peer.pid)) {
+          peers.delete(pid);
+          memory.logEvent('evict_ghost', { peer_id: pid, agent_name: peer.agent_name, team_id: teamId });
+        }
+      }
+    }
+
     const id = uid();
     const ts = now();
     peers.set(id, {
