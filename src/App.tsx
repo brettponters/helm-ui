@@ -99,26 +99,46 @@ export default function App() {
   // The HELM wordmark opens the orchestrator's own team, created on first
   // visit with "the-helm" pre-cast as the orchestrator (role + opus). It can
   // grow helpers like any team, but never appears as a tab.
+  //
+  // Every visit HEALS the team: if the orchestrator panel was removed or
+  // re-added bare (no role, no model, no admiral home), it gets repaired -
+  // the Helm must never sit in a panel that doesn't know it's the Helm.
   function openHelm() {
+    const freshOrchestrator = () => ({
+      id: `teammate-${crypto.randomUUID().slice(0, 8)}`,
+      name: 'the-helm',
+      command: 'claude',
+      cwd: '~/.helm/admiral',
+      status: 'running' as const,
+      systemPrompt: HELM_ORCHESTRATOR_PROMPT,
+      model: 'opus',
+      position: 'lead' as const,
+    });
+
     const existing = teams.find(t => t.id === HELM_TEAM_ID);
-    if (existing) {
-      save({ ...workspace!, activeTeamId: HELM_TEAM_ID });
+    if (!existing) {
+      const helmTeam: Team = { id: HELM_TEAM_ID, name: 'THE HELM', teammates: [freshOrchestrator()] };
+      save({ ...workspace!, teams: [...teams, helmTeam], activeTeamId: HELM_TEAM_ID });
       return;
     }
-    const helmTeam: Team = {
-      id: HELM_TEAM_ID,
-      name: 'THE HELM',
-      teammates: [{
-        id: `teammate-${crypto.randomUUID().slice(0, 8)}`,
-        name: 'the-helm',
-        command: 'claude',
-        cwd: '~/.helm/admiral',
-        status: 'running',
-        systemPrompt: HELM_ORCHESTRATOR_PROMPT,
-        model: 'opus',
-      }],
-    };
-    save({ ...workspace!, teams: [...teams, helmTeam], activeTeamId: HELM_TEAM_ID });
+
+    const teammates = existing.teammates.length === 0
+      ? [freshOrchestrator()]
+      : existing.teammates.map((m, i) => (i === 0
+        ? {
+            ...m,
+            systemPrompt: m.systemPrompt?.trim() ? m.systemPrompt : HELM_ORCHESTRATOR_PROMPT,
+            model: m.model || 'opus',
+            position: 'lead' as const,
+            cwd: !m.cwd || m.cwd === '~/' ? '~/.helm/admiral' : m.cwd,
+          }
+        : m));
+    const healed: Team = { ...existing, teammates };
+    save({
+      ...workspace!,
+      teams: teams.map(t => (t.id === HELM_TEAM_ID ? healed : t)),
+      activeTeamId: HELM_TEAM_ID,
+    });
   }
 
   function updateTeam(updated: Team) {
