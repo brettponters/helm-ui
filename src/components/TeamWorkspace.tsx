@@ -163,7 +163,7 @@ export function TeamWorkspace({ team, peers, onUpdateTeam }: TeamWorkspaceProps)
               onSetLead={() => setLead(teammate.id)}
               onRename={name => updateTeammate(teammate.id, { name })}
               onSetCwd={cwd => setTeamCwd(cwd)}
-              onSetRole={(role, model) => updateTeammate(teammate.id, { systemPrompt: role || undefined, model: model || undefined })}
+              onSetRole={(role, model, position) => updateTeammate(teammate.id, { systemPrompt: role || undefined, model: model || undefined, position })}
               onOpenPreview={() => openPreview(teammate)}
               onRemove={() => removeTeammate(teammate.id)}
             />

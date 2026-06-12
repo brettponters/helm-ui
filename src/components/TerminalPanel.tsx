@@ -8,12 +8,33 @@ import { RolePopover } from './RolePopover';
 import { CrownMark } from './CrownMark';
 import './TerminalPanel.css';
 
+// Every Helm agent launches with the workspace operating doctrine baked in.
+// The preset roles carry domain depth; this carries how to actually operate
+// here, the tools, the cadence, the chain of command. Without it a role is
+// just a personality that doesn't know it lives in a team.
+const TEAMMATE_DOCTRINE =
+  'You operate inside Helm, a multi-agent workspace, connected to your team through helm-teammates tools. ' +
+  'Operating rules: call set_summary the moment you start and again whenever your focus changes, one concrete sentence, it is your status board and your teammates plan around it. ' +
+  'When a teammate messages you, respond immediately, then resume your work. ' +
+  'Before starting anything non-trivial, recall_memory for prior context, someone may have already solved it or decided against it. ' +
+  'When you learn something durable (a decision, a gotcha, a result that outlives this task), add_memory with one self-contained fact. ' +
+  'When you are blocked or done, tell your team lead, never go quiet, and never wander outside your assignment.';
+
+const LEAD_DOCTRINE =
+  'You are this team\'s LEAD. You own the outcome, not the keystrokes: break work into clear assignments, delegate with send_message (or message_team to brief everyone at once), keep every teammate unblocked, and verify completion instead of assuming it. ' +
+  'Compress your team\'s state into crisp reports, when the Helm orchestrator messages you, respond immediately with status, blockers, and what happens next. You cannot message the Helm first; it opens conversations, you answer them well. ' +
+  'You may message other teams\' LEADS directly by name for cross-team coordination; anything that would change priorities or resources goes through the Helm. ' +
+  'Curate knowledge: make sure your team\'s durable learnings land in add_memory, and recall_memory before pointing anyone at a problem that may already be solved. ' +
+  'Keep the team thinking bigger, pull people out of rabbit holes, be critical of weak work, decide fast, and own the consequences.';
+
 // Frame the role so Claude fully adopts it as an identity, not just a style hint.
 // A bare role appended to Claude Code's large base prompt gets diluted (Claude
 // keeps calling itself "Claude Code"); this wrapper makes the role take over how
 // it presents itself, verified to flip self-identification.
-function frameRole(role: string): string {
-  return `You are a specialist teammate on this team. Fully take on the following role and stay in character, including how you introduce and identify yourself when asked who you are. Your role: ${role}`;
+function frameRole(role: string, position: 'worker' | 'lead'): string {
+  const doctrine = position === 'lead' ? `${TEAMMATE_DOCTRINE}\n\n${LEAD_DOCTRINE}` : TEAMMATE_DOCTRINE;
+  if (!role.trim()) return doctrine;
+  return `You are a specialist teammate on this team. Fully take on the following role and stay in character, including how you introduce and identify yourself when asked who you are. Your role: ${role.trim()}\n\n${doctrine}`;
 }
 
 // The visible command Save runs: `claude helm` (full Helm teammate, chat + live
@@ -22,10 +43,9 @@ function frameRole(role: string): string {
 // to clear it. (`claude helm` already adds --dangerously-skip-permissions.)
 const DEV_CHANNEL_CONFIRM_MS = 2000; // wait for the channel prompt, then press Enter
 
-function buildRunCommand(role: string, model: string): string {
+function buildRunCommand(role: string, model: string, position: 'worker' | 'lead'): string {
   const esc = (s: string) => s.replace(/\s*\n+\s*/g, ' ').replace(/'/g, "'\\''");
-  let cmd = 'claude helm';
-  if (role.trim()) cmd += ` --append-system-prompt '${esc(frameRole(role.trim()))}'`;
+  let cmd = `claude helm --append-system-prompt '${esc(frameRole(role, position))}'`;
   if (model) cmd += ` --model ${model}`;
   return cmd;
 }
@@ -41,7 +61,7 @@ interface TerminalPanelProps {
   onSetLead: () => void;
   onRename: (name: string) => void;
   onSetCwd: (path: string) => void;
-  onSetRole: (role: string, model: string) => void;
+  onSetRole: (role: string, model: string, position: 'worker' | 'lead') => void;
   onOpenPreview: () => void;
   onRemove: () => void;
 }
@@ -88,13 +108,14 @@ export function TerminalPanel({
     setEditingName(false);
   }
 
-  // Save the role/model, then, if Claude isn't already running here, start it
-  // with the system prompt injected. The auto-run is tied to this explicit Save.
-  function saveRole(role: string, model: string) {
-    onSetRole(role, model);
+  // Save the role/model/position, then, if Claude isn't already running here,
+  // start it with the composed system prompt (role + Helm doctrine, lead
+  // doctrine when positioned as lead). The auto-run is tied to this Save.
+  function saveRole(role: string, model: string, position: 'worker' | 'lead') {
+    onSetRole(role, model, position);
     setRoleOpen(false);
-    if (canSetUp && (role.trim() || model)) {
-      termRef.current?.runCommand(buildRunCommand(role, model));
+    if (canSetUp) {
+      termRef.current?.runCommand(buildRunCommand(role, model, position));
       // `claude helm` pauses on a dev-channel "confirm" prompt; press Enter for it.
       window.setTimeout(() => termRef.current?.runCommand(''), DEV_CHANNEL_CONFIRM_MS);
       setLaunching(true);
@@ -225,6 +246,7 @@ export function TerminalPanel({
           name={teammate.name}
           current={teammate.systemPrompt ?? ''}
           currentModel={teammate.model ?? ''}
+          currentPosition={teammate.position ?? (isLead ? 'lead' : 'worker')}
           onSave={saveRole}
           onClose={() => setRoleOpen(false)}
         />
