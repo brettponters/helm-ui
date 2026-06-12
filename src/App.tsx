@@ -63,6 +63,21 @@ export default function App() {
     save({ ...workspace!, teams: teams.map(t => (t.id === id ? { ...t, name } : t)) });
   }
 
+  // Drag-to-reorder tabs. The teams array order IS the tab order, so this
+  // persists through the workspace like everything else. The hidden helm team
+  // keeps its array position; we only move the dragged team around the target.
+  function reorderTeam(dragId: string, targetId: string, before: boolean) {
+    if (dragId === targetId) return;
+    const arr = [...teams];
+    const fromIdx = arr.findIndex(t => t.id === dragId);
+    if (fromIdx < 0) return;
+    const [moved] = arr.splice(fromIdx, 1);
+    const targetIdx = arr.findIndex(t => t.id === targetId);
+    if (targetIdx < 0) return;
+    arr.splice(before ? targetIdx : targetIdx + 1, 0, moved);
+    save({ ...workspace!, teams: arr });
+  }
+
   // Flip a team between operations (VERA-internal) and client (sealed
   // sandbox). The broker reads this from the workspace and enforces it.
   function toggleTeamKind(id: string) {
@@ -128,6 +143,7 @@ export default function App() {
           onRenameTeam={renameTeam}
           onDeleteTeam={deleteTeam}
           onToggleTeamKind={toggleTeamKind}
+          onReorderTeam={reorderTeam}
           onOpenHelm={openHelm}
           onOpenSettings={() => setSettingsOpen(true)}
         />

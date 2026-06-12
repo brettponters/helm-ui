@@ -15,17 +15,26 @@ interface TopBarProps {
   onRenameTeam: (id: string, name: string) => void;
   onDeleteTeam: (id: string) => void;
   onToggleTeamKind: (id: string) => void;
+  onReorderTeam: (dragId: string, targetId: string, before: boolean) => void;
   onOpenHelm: () => void;
   onOpenSettings: () => void;
 }
 
 export function TopBar({
   teams, activeTeamId, brokerConnected, activeCount, helmActive,
-  onSelectTeam, onAddTeam, onRenameTeam, onDeleteTeam, onToggleTeamKind, onOpenHelm, onOpenSettings,
+  onSelectTeam, onAddTeam, onRenameTeam, onDeleteTeam, onToggleTeamKind, onReorderTeam, onOpenHelm, onOpenSettings,
 }: TopBarProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  // Drag-to-reorder: which tab is being dragged, and where it would land.
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [drop, setDrop] = useState<{ id: string; before: boolean } | null>(null);
+
+  function endDrag() {
+    setDragId(null);
+    setDrop(null);
+  }
 
   function startEdit(team: Team, e: React.MouseEvent) {
     e.stopPropagation();
@@ -60,7 +69,35 @@ export function TopBar({
             key={team.id}
             role="button"
             tabIndex={0}
-            className={`tab ${team.id === activeTeamId ? 'tab--active' : ''}`}
+            className={[
+              'tab',
+              team.id === activeTeamId ? 'tab--active' : '',
+              dragId === team.id ? 'tab--dragging' : '',
+              drop?.id === team.id ? (drop.before ? 'tab--drop-before' : 'tab--drop-after') : '',
+            ].filter(Boolean).join(' ')}
+            draggable={editing !== team.id && confirmId !== team.id}
+            onDragStart={e => {
+              setDragId(team.id);
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/plain', team.id); // required by some engines to start a drag
+            }}
+            onDragOver={e => {
+              if (!dragId || dragId === team.id) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              const r = e.currentTarget.getBoundingClientRect();
+              const before = e.clientX < r.left + r.width / 2;
+              if (drop?.id !== team.id || drop.before !== before) setDrop({ id: team.id, before });
+            }}
+            onDragLeave={() => { if (drop?.id === team.id) setDrop(null); }}
+            onDrop={e => {
+              e.preventDefault();
+              if (dragId && dragId !== team.id && drop?.id === team.id) {
+                onReorderTeam(dragId, team.id, drop.before);
+              }
+              endDrag();
+            }}
+            onDragEnd={endDrag}
             onClick={() => onSelectTeam(team.id)}
             onDoubleClick={e => startEdit(team, e)}
           >
