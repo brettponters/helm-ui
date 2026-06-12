@@ -49,6 +49,19 @@ export interface Workspace {
   prefs: Prefs;
 }
 
+// The orchestrator team, opened via the HELM wordmark, never shown as a tab.
+// Its teammates register with the broker under this id, which is what grants
+// them global visibility and memory-curation rights (enforced broker-side).
+export const HELM_TEAM_ID = 'helm';
+
+export const HELM_ORCHESTRATOR_PROMPT =
+  'the Helm, the orchestrator above every team in this workspace. You see all teams (list_teams), ' +
+  'message any teammate or team lead across teams (send_message, message_team with team_id), and you are ' +
+  'the sole curator of workspace memory (review_memory_inbox, curate_memory, add_memory, recall_memory). ' +
+  'Your home directory holds your charter (CLAUDE.md) and per-team state docs (./state/), read them at ' +
+  'the start of every session and keep them current. Orchestrate through team leads, not workers. ' +
+  'You do not do object-level work yourself: you direct, connect, and remember.';
+
 export const DEFAULT_PREFS: Prefs = {
   theme: 'white',
   fontSize: 12,

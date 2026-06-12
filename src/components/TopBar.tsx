@@ -9,16 +9,18 @@ interface TopBarProps {
   activeTeamId: string;
   brokerConnected: boolean;
   activeCount: number;
+  helmActive: boolean;
   onSelectTeam: (id: string) => void;
   onAddTeam: () => void;
   onRenameTeam: (id: string, name: string) => void;
   onDeleteTeam: (id: string) => void;
+  onOpenHelm: () => void;
   onOpenSettings: () => void;
 }
 
 export function TopBar({
-  teams, activeTeamId, brokerConnected, activeCount,
-  onSelectTeam, onAddTeam, onRenameTeam, onDeleteTeam, onOpenSettings,
+  teams, activeTeamId, brokerConnected, activeCount, helmActive,
+  onSelectTeam, onAddTeam, onRenameTeam, onDeleteTeam, onOpenHelm, onOpenSettings,
 }: TopBarProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -42,10 +44,14 @@ export function TopBar({
 
   return (
     <header className="topbar">
-      <div className="topbar-logo">
+      <button
+        className={`topbar-logo ${helmActive ? 'topbar-logo--active' : ''}`}
+        title="The Helm, the orchestrator above every team"
+        onClick={onOpenHelm}
+      >
         <span className="logo-mark"><CrownMark size={18} animate /></span>
         <span className="logo-text">HELM</span>
-      </div>
+      </button>
 
       <nav className="topbar-tabs">
         {teams.map(team => (

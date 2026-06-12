@@ -15,6 +15,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import * as memory from './memory.js';
 
 const PORT = parseInt(process.env.HELM_BROKER_PORT || process.env.CLAUDE_PEERS_PORT || '7900', 10);
 const STALE_MS = 45000;
@@ -218,6 +219,17 @@ let workspace = loadWorkspace();
 const uiCommands = [];          // commands an agent (via MCP) asks the UI to run
 let cmdCounter = 0;
 
+// The orchestrator team. Peers registered under this team id get memory
+// curation rights and global visibility via the MCP's helm-only tools.
+const HELM_TEAM_ID = 'helm';
+
+memory.init();
+
+function isHelmActor(peerId) {
+  const peer = peers.get(peerId);
+  return !!peer && peer.team_id === HELM_TEAM_ID;
+}
+
 function uid() {
   return crypto.randomBytes(4).toString('hex');
 }
@@ -261,6 +273,7 @@ const handlers = {
       registered_at: ts,
       last_seen:    ts,
     });
+    memory.logEvent('register', { peer_id: id, agent_name: body.agent_name || null, team_id: body.team_id || 'default', cwd: body.cwd || '' });
     return { id };
   },
 
@@ -276,6 +289,7 @@ const handlers = {
     if (!peer) return { error: 'not_found' };
     peer.summary   = body.summary || '';
     peer.last_seen = now();
+    memory.logEvent('summary', { peer_id: peer.id, agent_name: peer.agent_name, team_id: peer.team_id, summary: peer.summary });
     return { ok: true };
   },
 
@@ -284,8 +298,12 @@ const handlers = {
   'POST /set-agent-name'(body) {
     const peer = peers.get(body.id);
     if (!peer) return { error: 'not_found' };
+    const prev = peer.agent_name;
     peer.agent_name = body.agent_name || peer.agent_name;
     peer.last_seen  = now();
+    if (peer.agent_name !== prev) {
+      memory.logEvent('rename', { peer_id: peer.id, team_id: peer.team_id, from: prev, to: peer.agent_name });
+    }
     return { ok: true };
   },
 
@@ -419,6 +437,13 @@ const handlers = {
       delivered: false,
     };
     messages.push(msg);
+    const from = peers.get(body.from_id);
+    const to = peers.get(body.to_id);
+    memory.logEvent('message', {
+      from_id: body.from_id, from_name: from?.agent_name || null,
+      to_id: body.to_id, to_name: to?.agent_name || null,
+      team_id: from?.team_id || null, text: body.text,
+    });
     return { ok: true, id: msg.id };
   },
 
@@ -438,6 +463,11 @@ const handlers = {
         delivered: false,
       });
     }
+    const from = peers.get(body.from_id);
+    memory.logEvent('broadcast', {
+      from_id: body.from_id, from_name: from?.agent_name || null,
+      team_id: body.team_id, sent_to: teamPeers.length, text: body.text,
+    });
     return { ok: true, sent_to: teamPeers.length };
   },
 
@@ -448,8 +478,74 @@ const handlers = {
   },
 
   'POST /unregister'(body) {
+    const peer = peers.get(body.id);
+    if (peer) memory.logEvent('unregister', { peer_id: peer.id, agent_name: peer.agent_name, team_id: peer.team_id });
     peers.delete(body.id);
     return { ok: true };
+  },
+
+  // ─── Memory ────────────────────────────────────────────────────────────────
+  // Any teammate may add and search. Curation (promote/update/delete, reading
+  // the inbox) is restricted to peers on the Helm orchestrator team.
+
+  async 'POST /memory/add'(body) {
+    const from = body.from_id ? peers.get(body.from_id) : null;
+    const { entry, semantic } = await memory.addMemory({
+      text: body.text,
+      tags: body.tags,
+      team: body.team ?? from?.team_id ?? null,
+      source: from ? { peer_id: from.id, agent_name: from.agent_name, team_id: from.team_id } : null,
+      // The Helm's own adds are trusted straight into the curated store.
+      status: from && isHelmActor(from.id) ? 'curated' : 'inbox',
+    });
+    return { ok: true, id: entry.id, status: entry.status, semantic };
+  },
+
+  async 'POST /memory/search'(body) {
+    const { results, semantic } = await memory.search(body.query, {
+      k: body.k, team: body.team ?? null,
+    });
+    return {
+      semantic,
+      results: results.map(r => ({
+        id: r.entry.id, text: r.entry.text, tags: r.entry.tags, team: r.entry.team,
+        status: r.entry.status, source: r.entry.source,
+        updated_at: r.entry.updated_at, score: Math.round(r.score * 1000) / 1000,
+      })),
+    };
+  },
+
+  'POST /memory/inbox'(body) {
+    if (!isHelmActor(body.actor_id)) return { error: 'forbidden_not_helm' };
+    return { entries: memory.inbox() };
+  },
+
+  async 'POST /memory/curate'(body) {
+    if (!isHelmActor(body.actor_id)) return { error: 'forbidden_not_helm' };
+    switch (body.action) {
+      case 'promote': {
+        const patch = { status: 'curated' };
+        if (body.text !== undefined) patch.text = body.text;
+        if (body.tags !== undefined) patch.tags = body.tags;
+        if (body.team !== undefined) patch.team = body.team;
+        return { ok: true, entry: memory.updateMemory(body.id, patch) };
+      }
+      case 'update': {
+        const patch = {};
+        if (body.text !== undefined) patch.text = body.text;
+        if (body.tags !== undefined) patch.tags = body.tags;
+        if (body.team !== undefined) patch.team = body.team;
+        return { ok: true, entry: memory.updateMemory(body.id, patch) };
+      }
+      case 'delete':
+        return memory.deleteMemory(body.id);
+      default:
+        return { error: 'bad_action' };
+    }
+  },
+
+  'GET /memory/stats'() {
+    return memory.stats();
   },
 
   // Persisted workspace config for the UI (and, later, the control-MCP).
@@ -521,10 +617,10 @@ const server = http.createServer((req, res) => {
 
   let body = '';
   req.on('data', chunk => body += chunk);
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const parsed = body ? JSON.parse(body) : {};
-      const result = handler(parsed, url.searchParams);
+      const result = await handler(parsed, url.searchParams); // handlers may be async (memory endpoints embed over the network)
       res.writeHead(200, cors);
       res.end(JSON.stringify(result));
     } catch (err) {
