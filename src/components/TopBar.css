@@ -116,6 +116,25 @@
   letter-spacing: 0.1em;
 }
 
+/* drag-to-reorder */
+.tab--dragging {
+  opacity: 0.35;
+}
+
+.tab--drop-before::before,
+.tab--drop-after::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: var(--text);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+}
+
+.tab--drop-before::before { left: -1px; }
+.tab--drop-after::after { right: -1px; }
+
 .tab-count {
   font-size: 10px;
   color: var(--text-label);
