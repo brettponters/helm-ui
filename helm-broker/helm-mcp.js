@@ -104,6 +104,8 @@ IMPORTANT: When you receive a <channel source="helm-teammates" ...> message, RES
 
 Read from_id, from_name, and from_summary to understand who sent it. Reply by calling send_message with their from_id.
 
+If the Helm (the workspace orchestrator) messages you, reply promptly to its from_id, but you cannot initiate contact with it; it opens conversations, you answer them.
+
 Tools:
 - list_teammates: See the other teammates on your team (id, name, cwd, summary)
 - send_message: Message one teammate by name or id
@@ -262,12 +264,15 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         if (!peers.some(p => p.id === target)) {
           const byName = peers.filter(p => (p.agent_name || '').toLowerCase() === target.toLowerCase());
           if (byName.length === 1) toId = byName[0].id;
-          else if (byName.length === 0) return text(`No teammate "${target}"${IS_HELM ? '' : ` on team "${TEAM}"`}. Use ${IS_HELM ? 'list_teams' : 'list_teammates'} to see names/ids.`, true);
-          else return text(`More than one teammate is named "${target}". Use their id from ${IS_HELM ? 'list_teams' : 'list_teammates'}.`, true);
+          else if (byName.length > 1) return text(`More than one teammate is named "${target}". Use their id from ${IS_HELM ? 'list_teams' : 'list_teammates'}.`, true);
+          else return text(`No teammate "${target}"${IS_HELM ? '' : ` on team "${TEAM}"`}. Use ${IS_HELM ? 'list_teams' : 'list_teammates'} to see names/ids.`, true);
         }
         const r = await brokerFetch('/send-message', { from_id: myId, to_id: toId, text: message });
         if (r.error === 'helm_messages_leads_only') {
           return text(`Refused: "${target}" is not the lead of team "${r.team}". The Helm messages leads only${r.lead ? `, that team's lead is "${r.lead}"` : ''}; direct the work through them.`, true);
+        }
+        if (r.error === 'helm_initiates_contact') {
+          return text('Refused: the Helm contacts you, not the other way around. You can reply (send_message to its from_id) only while it has an open conversation with you.', true);
         }
         return r.ok ? text(`Message sent to ${target}.`) : text(`Failed: ${r.error}`, true);
       }
