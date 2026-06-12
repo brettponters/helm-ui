@@ -104,7 +104,7 @@ IMPORTANT: When you receive a <channel source="helm-teammates" ...> message, RES
 
 Read from_id, from_name, and from_summary to understand who sent it. Reply by calling send_message with their from_id.
 
-If the Helm (the workspace orchestrator) messages you, reply promptly to its from_id. If you are your team's LEAD you can also message it any time at the name "helm", escalations, reports, questions. Workers cannot reach the Helm directly; they escalate through their lead.
+If the Helm (the workspace orchestrator) messages you, reply promptly to its from_id. If you are your team's LEAD, use the message_helm tool any time for escalations, reports, and questions. Workers cannot reach the Helm directly; they escalate through their lead.
 
 If you are your team's LEAD, you can also message other teams' leads directly by name (lateral coordination, e.g. marketing lead asking legal lead). Workers cannot cross teams; they escalate through their own lead.
 
@@ -200,6 +200,21 @@ const TOOLS = [
   },
 ];
 
+// The upward channel, exposed only to non-helm sessions. The broker enforces
+// that only a team's LEAD gets through; workers are refused with their lead's
+// name so they escalate properly.
+const MESSAGE_HELM_TOOL = {
+  name: 'message_helm',
+  description: 'Message the Helm, the workspace orchestrator. TEAM LEADS ONLY (workers are refused and should report to their own lead). Use it for status reports, escalations, blockers you cannot clear, and decisions above your team\'s pay grade.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      message: { type: 'string', description: 'Your report or escalation. Lead with the headline; include status, blocker, and what you need.' },
+    },
+    required: ['message'],
+  },
+};
+
 // Tools only the orchestrator team gets. The broker re-checks the actor's team
 // on every curation call, so this gating is UX, not the security boundary.
 const HELM_TOOLS = [
@@ -231,7 +246,7 @@ const HELM_TOOLS = [
 ];
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: IS_HELM ? [...TOOLS, ...HELM_TOOLS] : TOOLS,
+  tools: IS_HELM ? [...TOOLS, ...HELM_TOOLS] : [...TOOLS, MESSAGE_HELM_TOOL],
 }));
 
 function text(t, isError) {
@@ -335,6 +350,16 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         myName = newName;
         return text(`Renamed your panel to "${newName}".`);
       }
+      case 'message_helm': {
+        if (IS_HELM) return text('You are the Helm.', true);
+        const helmPeers = await brokerFetch('/list-peers', { team_id: 'helm' });
+        if (!helmPeers.length) return text('The Helm is not online right now (no agent running in its panel). Save the report with add_memory or try again later.', true);
+        const r = await brokerFetch('/send-message', { from_id: myId, to_id: helmPeers[0].id, text: args.message });
+        if (r.error === 'helm_reports_via_lead') {
+          return text(`Refused: only your team's lead may message the Helm. Report to your lead${r.lead ? ` ("${r.lead}")` : ''} and let them escalate.`, true);
+        }
+        return r.ok ? text('Report delivered to the Helm.') : text(`Failed: ${r.error}`, true);
+      }
       case 'add_memory': {
         const r = await brokerFetch('/memory/add', { from_id: myId, text: args.text, tags: args.tags });
         if (!r.ok) return text(`Failed: ${r.error}`, true);
@@ -434,27 +459,42 @@ async function pollAndPush() {
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
 
+// Register (or re-register) with the broker. Called at startup and again
+// whenever a heartbeat discovers the broker restarted and forgot us, without
+// this, a broker bounce silently orphans every running session until its
+// claude is manually restarted.
+async function register() {
+  const cwd = process.cwd();
+  const reg = await brokerFetch('/register', {
+    pid: process.pid,
+    cwd,
+    git_root: await gitRoot(cwd),
+    tty: null,
+    summary: '',
+    team_id: TEAM,
+    agent_name: myName || TEAMMATE,
+  });
+  myId = reg.id;
+  log(`registered as teammate ${myId} (name=${myName || TEAMMATE || '(unnamed)'}, team=${TEAM})`);
+}
+
 async function main() {
   // Always connect MCP so the tools exist; only register as a teammate when
   // we're genuinely inside a Helm panel and the broker is reachable.
   if (ACTIVE) {
     if (await brokerAlive()) {
-      const cwd = process.cwd();
-      const reg = await brokerFetch('/register', {
-        pid: process.pid,
-        cwd,
-        git_root: await gitRoot(cwd),
-        tty: null,
-        summary: '',
-        team_id: TEAM,
-        agent_name: TEAMMATE,
-      });
-      myId = reg.id;
-      log(`registered as teammate ${myId} (name=${TEAMMATE || '(unnamed)'}, team=${TEAM})`);
+      await register();
 
       setInterval(pollAndPush, POLL_INTERVAL_MS);
       setInterval(async () => {
-        if (myId) { try { await brokerFetch('/heartbeat', { id: myId }); } catch { /* non-critical */ } }
+        if (!myId) return;
+        try {
+          const r = await brokerFetch('/heartbeat', { id: myId });
+          if (r?.error === 'not_found') {
+            log('broker forgot us (restarted?), re-registering');
+            await register();
+          }
+        } catch { /* broker briefly down; next heartbeat retries */ }
       }, HEARTBEAT_INTERVAL_MS);
     } else {
       log(`Helm broker not reachable on ${BROKER_URL}, tools will report unavailable until the Helm app is running.`);
