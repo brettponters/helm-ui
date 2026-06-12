@@ -9,11 +9,12 @@
  * checks pass unchanged and the renderer stays a sandboxed web context.
  */
 
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, dialog } = require('electron');
 const { spawn } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { isSetUp, setupHelmChat } = require('../scripts/helm-setup.cjs');
 
 const UI_PORT = 5199;
 const UI_URL = `http://localhost:${UI_PORT}`;
@@ -135,7 +136,45 @@ async function boot() {
   } catch (err) {
     console.error('[helm-app]', err.message);
   }
-  createWindow();
+  const win = createWindow();
+  maybeFirstRunSetup(win);
+}
+
+// First launch: wire up `claude helm` for the user so they never touch a setup
+// command. One consent click (it edits their shell rc + registers a local MCP),
+// then it's done forever. The MCP runs via this app's own Electron-as-Node when
+// packaged, so no system Node is required.
+async function maybeFirstRunSetup(win) {
+  try {
+    if (isSetUp()) return;
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: ['Set up', 'Not now'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Enable claude helm',
+      message: 'Set up Helm teammate chat?',
+      detail: 'Adds a `claude helm` command to your shell and registers a local helper so agents in Helm can message each other. One time only — no terminal setup needed.',
+    });
+    if (response !== 0) return;
+
+    const mcpPath = path.join(ROOT, 'helm-broker', 'helm-mcp.js');
+    const command = app.isPackaged ? process.execPath : 'node';
+    const env = app.isPackaged ? { ELECTRON_RUN_AS_NODE: '1' } : {};
+    const r = setupHelmChat({ command, args: [mcpPath], env });
+
+    dialog.showMessageBox(win, {
+      type: 'info',
+      buttons: ['OK'],
+      title: 'claude helm is ready',
+      message: r.manualShell ? 'Almost there' : 'claude helm is set up',
+      detail: r.manualShell
+        ? `${r.shell}\n\nYour shell already defines claude(); add the helm branch shown in the README, then it's ready.`
+        : `${r.shell}\n\nOpen a new terminal, then type \`claude helm\` in any panel.`,
+    });
+  } catch (err) {
+    console.error('[helm-app] first-run setup failed:', err.message);
+  }
 }
 
 app.whenReady().then(boot);
