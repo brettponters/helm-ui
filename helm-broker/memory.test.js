@@ -216,6 +216,37 @@ test('text update invalidates the stale vector until re-embedded', async () => {
   assert.equal(memory.stats().embedded, 0); // dropped, will backfill with new text
 });
 
+// ─── Visibility ───────────────────────────────────────────────────────────────
+
+test('visibility: ops sees own+shared, client sees only own, helm sees all', async () => {
+  await memory.addMemory({ text: 'visibility shared workspace fact' });                       // team null = shared
+  await memory.addMemory({ text: 'visibility marketing private fact', team: 'marketing' });
+  await memory.addMemory({ text: 'visibility palm client secret fact', team: 'palm' });
+
+  // Operations team: its own + shared, never another team's.
+  const ops = await memory.search('visibility fact', { team: 'marketing' });
+  const opsTexts = ops.results.map(r => r.entry.text).join('|');
+  assert.match(opsTexts, /shared workspace/);
+  assert.match(opsTexts, /marketing private/);
+  assert.ok(!opsTexts.includes('palm client'), 'ops must not see another team');
+
+  // Client team: ONLY its own, shared never flows in.
+  const client = await memory.search('visibility fact', { team: 'palm', clientTeam: true });
+  const clientTexts = client.results.map(r => r.entry.text).join('|');
+  assert.match(clientTexts, /palm client/);
+  assert.ok(!clientTexts.includes('shared workspace'), 'client must not see shared');
+  assert.ok(!clientTexts.includes('marketing private'), 'client must not see ops teams');
+
+  // The Helm: everything.
+  const helm = await memory.search('visibility fact', { all: true });
+  assert.equal(helm.results.length, 3);
+
+  // Unidentified caller: shared only.
+  const anon = await memory.search('visibility fact');
+  assert.equal(anon.results.length, 1);
+  assert.match(anon.results[0].entry.text, /shared workspace/);
+});
+
 // ─── Event log ────────────────────────────────────────────────────────────────
 
 test('logEvent appends JSONL and never throws', () => {
