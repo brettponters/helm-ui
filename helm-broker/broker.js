@@ -676,6 +676,16 @@ const server = http.createServer((req, res) => {
   });
 });
 
+server.on('error', err => {
+  if (err.code === 'EADDRINUSE') {
+    // A broker is already running (it survived an app restart), defer to it.
+    console.log(`[helm-broker] port ${PORT} already in use, deferring to the running broker`);
+    process.exit(0);
+  }
+  console.error(`[helm-broker] ${err.message}`);
+  process.exit(1);
+});
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[helm-broker] listening on http://127.0.0.1:${PORT}`);
 });
