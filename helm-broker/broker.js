@@ -231,6 +231,17 @@ function isHelmActor(peerId) {
   return !!peer && peer.team_id === HELM_TEAM_ID;
 }
 
+// A team's lead: the crowned teammate (layout.leadId) or, failing that, the
+// first teammate. The Helm orchestrator may only message leads, chain of
+// command is enforced here, not just suggested in prompts.
+function leadNameFor(teamId) {
+  const team = workspace?.teams?.find(t => t.id === teamId);
+  if (!team || !Array.isArray(team.teammates) || !team.teammates.length) return null;
+  const lead = (team.layout?.leadId && team.teammates.find(m => m.id === team.layout.leadId))
+    || team.teammates[0];
+  return lead?.name || null;
+}
+
 function uid() {
   return crypto.randomBytes(4).toString('hex');
 }
@@ -422,7 +433,8 @@ const handlers = {
     return { file: fileMeta(cwd, p) };
   },
 
-  // Helm UI endpoint, peers grouped by team
+  // Helm UI endpoint, peers grouped by team, annotated with each team's lead
+  // so the orchestrator knows whom it may message.
   'GET /teams'() {
     const map = {};
     for (const peer of peers.values()) {
@@ -430,10 +442,22 @@ const handlers = {
       if (!map[tid]) map[tid] = { id: tid, peers: [] };
       map[tid].peers.push(peer);
     }
-    return { teams: Object.values(map) };
+    return { teams: Object.values(map).map(t => ({ ...t, lead: leadNameFor(t.id) })) };
   },
 
   'POST /send-message'(body) {
+    const from = peers.get(body.from_id);
+    const to = peers.get(body.to_id);
+
+    // Chain of command: the Helm speaks only to team leads (its own helper
+    // team excepted). Workers report to their lead, leads report to the Helm.
+    if (from?.team_id === HELM_TEAM_ID && to && to.team_id !== HELM_TEAM_ID) {
+      const leadName = leadNameFor(to.team_id);
+      if (!leadName || to.agent_name !== leadName) {
+        return { error: 'helm_messages_leads_only', team: to.team_id, lead: leadName };
+      }
+    }
+
     const msg = {
       id:       ++msgCounter,
       from_id:  body.from_id,
@@ -444,8 +468,6 @@ const handlers = {
       delivered: false,
     };
     messages.push(msg);
-    const from = peers.get(body.from_id);
-    const to = peers.get(body.to_id);
     memory.logEvent('message', {
       from_id: body.from_id, from_name: from?.agent_name || null,
       to_id: body.to_id, to_name: to?.agent_name || null,
@@ -456,6 +478,12 @@ const handlers = {
 
   // Broadcast to all peers in a team
   'POST /broadcast'(body) {
+    const sender = peers.get(body.from_id);
+    // The Helm may broadcast only to its own helper team; to move another
+    // team it messages that team's lead.
+    if (sender?.team_id === HELM_TEAM_ID && body.team_id !== HELM_TEAM_ID) {
+      return { error: 'helm_messages_leads_only', team: body.team_id, lead: leadNameFor(body.team_id) };
+    }
     const teamPeers = Array.from(peers.values())
       .filter(p => p.team_id === body.team_id && p.id !== body.from_id);
     const ts = now();

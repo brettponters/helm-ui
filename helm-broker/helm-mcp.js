@@ -84,20 +84,20 @@ const mcp = new Server(
       tools: {},
     },
     instructions: IS_HELM
-      ? `You are the Helm, the orchestrator above every team in this workspace. You see all teams, can message any teammate, and are the sole curator of workspace memory.
+      ? `You are the Helm, the orchestrator above every team in this workspace. You see all teams, you speak ONLY to team leads (chain of command, enforced by the broker), and you are the sole curator of workspace memory.
 
 IMPORTANT: When you receive a <channel source="helm-teammates" ...> message, RESPOND IMMEDIATELY. Pause what you are doing, reply with send_message, then resume.
 
 Tools:
-- list_teams: Every team and its live agents (name, cwd, summary)
-- send_message: Message ANY teammate on any team by name or id
-- message_team: Broadcast to a team (pass team_id to target any team)
+- list_teams: Every team, its live agents, and who its lead is
+- send_message: Message a team's LEAD (marked in list_teams). Messages to workers are refused, direct work through their lead.
+- message_team: Broadcast to your own helper team only
 - recall_memory / add_memory: Semantic workspace memory (your adds are curated immediately)
 - review_memory_inbox: Memories submitted by teammates awaiting your curation
 - curate_memory: Promote, update, or delete memories, only you can do this
 - set_summary / check_messages / rename_me: As usual
 
-Orchestrate through team leads, not individual workers. Review the memory inbox regularly; promote what matters, delete what's stale.`
+Leads compress their team's state up to you; you set direction, connect teams, and remember. Review the memory inbox regularly; promote what matters, delete what's stale.`
       : `You are a teammate in a Helm workspace. Other Claude Code teammates on your team can see you and message you.
 
 IMPORTANT: When you receive a <channel source="helm-teammates" ...> message, RESPOND IMMEDIATELY. Pause what you are doing, reply with send_message, then resume. Treat it like a teammate tapping you on the shoulder.
@@ -266,13 +266,19 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           else return text(`More than one teammate is named "${target}". Use their id from ${IS_HELM ? 'list_teams' : 'list_teammates'}.`, true);
         }
         const r = await brokerFetch('/send-message', { from_id: myId, to_id: toId, text: message });
+        if (r.error === 'helm_messages_leads_only') {
+          return text(`Refused: "${target}" is not the lead of team "${r.team}". The Helm messages leads only${r.lead ? `, that team's lead is "${r.lead}"` : ''}; direct the work through them.`, true);
+        }
         return r.ok ? text(`Message sent to ${target}.`) : text(`Failed: ${r.error}`, true);
       }
       case 'message_team': {
-        // The Helm may broadcast to any team; everyone else only to their own.
-        const teamId = IS_HELM && args.team_id ? String(args.team_id) : TEAM;
-        const r = await brokerFetch('/broadcast', { from_id: myId, team_id: teamId, text: args.message });
-        return text(`Broadcast to ${r.sent_to} teammate(s) on team "${teamId}".`);
+        // Everyone broadcasts only to their own team, for the Helm that means
+        // its helper team; it reaches other teams through their leads.
+        const r = await brokerFetch('/broadcast', { from_id: myId, team_id: TEAM, text: args.message });
+        if (r.error === 'helm_messages_leads_only') {
+          return text(`Refused: the Helm reaches a team through its lead${r.lead ? ` ("${r.lead}")` : ''}, not by broadcast.`, true);
+        }
+        return text(`Broadcast to ${r.sent_to} teammate(s) on team "${TEAM}".`);
       }
       case 'set_summary': {
         await brokerFetch('/set-summary', { id: myId, summary: args.summary });
@@ -314,10 +320,14 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const { teams } = await fetch(`${BROKER_URL}/teams`).then(r => r.json());
         if (!teams.length) return text('No live agents on any team.');
         const blocks = teams.map(t => {
-          const members = t.peers.map(p => `  - ${p.agent_name || '(unnamed)'} [${p.id}] cwd: ${p.cwd}${p.summary ? `\n    ${p.summary}` : ''}`);
-          return `team "${t.id}" (${t.peers.length} live):\n${members.join('\n')}`;
+          const members = t.peers.map(p => {
+            const isLead = t.lead && p.agent_name === t.lead;
+            return `  - ${p.agent_name || '(unnamed)'}${isLead ? ' ← LEAD' : ''} [${p.id}] cwd: ${p.cwd}${p.summary ? `\n    ${p.summary}` : ''}`;
+          });
+          const leadNote = t.lead ? `, lead: ${t.lead}` : ', no lead set';
+          return `team "${t.id}" (${t.peers.length} live${leadNote}):\n${members.join('\n')}`;
         });
-        return text(blocks.join('\n\n'));
+        return text(`${blocks.join('\n\n')}\n\nYou may message only the LEAD of each team.`);
       }
       case 'review_memory_inbox': {
         if (!IS_HELM) return text('review_memory_inbox is Helm-only.', true);
