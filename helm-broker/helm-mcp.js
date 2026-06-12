@@ -74,6 +74,13 @@ function gitRoot(cwd) {
   });
 }
 
+// When several registrations answer to the same address (a relaunch left a
+// stale twin behind), the newest one is the live session, never route a
+// message to a ghost.
+function newestPeer(list) {
+  return [...list].sort((a, b) => String(b.registered_at).localeCompare(String(a.registered_at)))[0];
+}
+
 // ─── MCP server ──────────────────────────────────────────────────────────────
 
 const mcp = new Server(
@@ -280,7 +287,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const peers = await brokerFetch('/list-peers', IS_HELM ? {} : { team_id: TEAM });
         if (!peers.some(p => p.id === target)) {
           const byName = peers.filter(p => (p.agent_name || '').toLowerCase() === target.toLowerCase());
-          if (byName.length === 1) toId = byName[0].id;
+          // Same name on the SAME team means a relaunch left a stale twin -
+          // route to the newest registration. Same name on different teams is
+          // genuine ambiguity and still errors.
+          const distinctTeams = new Set(byName.map(p => p.team_id));
+          if (byName.length >= 1 && distinctTeams.size === 1) {
+            toId = newestPeer(byName).id;
+          }
           else if (byName.length > 1) return text(`More than one teammate is named "${target}". Use their id from ${IS_HELM ? 'list_teams' : 'list_teammates'}.`, true);
           else if (!IS_HELM && ['helm', 'the-helm'].includes(target.toLowerCase())) {
             // "helm" is the well-known upward address: a team's LEAD can
@@ -288,7 +301,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             // broker refuses non-leads, so workers still go through their lead.)
             const helmPeers = await brokerFetch('/list-peers', { team_id: 'helm' });
             if (!helmPeers.length) return text('The Helm is not online right now (no agent running in its panel).', true);
-            toId = helmPeers[0].id;
+            toId = newestPeer(helmPeers).id;
           }
           else if (!IS_HELM) {
             // Not on this team, maybe it's another team's LEAD (lateral
@@ -354,7 +367,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         if (IS_HELM) return text('You are the Helm.', true);
         const helmPeers = await brokerFetch('/list-peers', { team_id: 'helm' });
         if (!helmPeers.length) return text('The Helm is not online right now (no agent running in its panel). Save the report with add_memory or try again later.', true);
-        const r = await brokerFetch('/send-message', { from_id: myId, to_id: helmPeers[0].id, text: args.message });
+        const r = await brokerFetch('/send-message', { from_id: myId, to_id: newestPeer(helmPeers).id, text: args.message });
         if (r.error === 'helm_reports_via_lead') {
           return text(`Refused: only your team's lead may message the Helm. Report to your lead${r.lead ? ` ("${r.lead}")` : ''} and let them escalate.`, true);
         }
