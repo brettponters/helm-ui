@@ -104,7 +104,7 @@ IMPORTANT: When you receive a <channel source="helm-teammates" ...> message, RES
 
 Read from_id, from_name, and from_summary to understand who sent it. Reply by calling send_message with their from_id.
 
-If the Helm (the workspace orchestrator) messages you, reply promptly to its from_id, but you cannot initiate contact with it; it opens conversations, you answer them.
+If the Helm (the workspace orchestrator) messages you, reply promptly to its from_id. If you are your team's LEAD you can also message it any time at the name "helm", escalations, reports, questions. Workers cannot reach the Helm directly; they escalate through their lead.
 
 If you are your team's LEAD, you can also message other teams' leads directly by name (lateral coordination, e.g. marketing lead asking legal lead). Workers cannot cross teams; they escalate through their own lead.
 
@@ -267,6 +267,14 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           const byName = peers.filter(p => (p.agent_name || '').toLowerCase() === target.toLowerCase());
           if (byName.length === 1) toId = byName[0].id;
           else if (byName.length > 1) return text(`More than one teammate is named "${target}". Use their id from ${IS_HELM ? 'list_teams' : 'list_teammates'}.`, true);
+          else if (!IS_HELM && ['helm', 'the-helm'].includes(target.toLowerCase())) {
+            // "helm" is the well-known upward address: a team's LEAD can
+            // always reach the orchestrator without hunting for its id. (The
+            // broker refuses non-leads, so workers still go through their lead.)
+            const helmPeers = await brokerFetch('/list-peers', { team_id: 'helm' });
+            if (!helmPeers.length) return text('The Helm is not online right now (no agent running in its panel).', true);
+            toId = helmPeers[0].id;
+          }
           else if (!IS_HELM) {
             // Not on this team, maybe it's another team's LEAD (lateral
             // coordination). Resolve against the lead roster; the broker still
@@ -281,7 +289,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             }
             if (lateral.length === 1) toId = lateral[0].id;
             else if (lateral.length > 1) return text(`More than one team has a lead named "${target}". Use their peer id.`, true);
-            else return text(`No teammate "${target}" on team "${TEAM}" and no other team's lead by that name. Use list_teammates for your team; team leads can also message other teams' leads by name.`, true);
+            else return text(`No teammate "${target}" on team "${TEAM}" and no other team's lead by that name. Use list_teammates for your team; team leads can also message other teams' leads by name, or "helm" to reach the orchestrator.`, true);
           }
           else return text(`No teammate "${target}". Use list_teams to see names/ids.`, true);
         }
@@ -289,8 +297,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         if (r.error === 'helm_messages_leads_only') {
           return text(`Refused: "${target}" is not the lead of team "${r.team}". The Helm messages leads only${r.lead ? `, that team's lead is "${r.lead}"` : ''}; direct the work through them.`, true);
         }
-        if (r.error === 'helm_initiates_contact') {
-          return text('Refused: the Helm contacts you, not the other way around. You can reply (send_message to its from_id) only while it has an open conversation with you.', true);
+        if (r.error === 'helm_reports_via_lead') {
+          return text(`Refused: only your team's lead may message the Helm. Report to your lead${r.lead ? ` ("${r.lead}")` : ''} and let them escalate.`, true);
         }
         if (r.error === 'cross_team_leads_only') {
           return text(`Refused: cross-team messages are lead-to-lead only. ${r.your_lead ? `Escalate through your lead ("${r.your_lead}")` : 'Escalate through your lead'}${r.their_lead ? `, who can reach their lead ("${r.their_lead}")` : ''}.`, true);

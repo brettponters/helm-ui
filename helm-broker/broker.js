@@ -226,10 +226,6 @@ const HELM_TEAM_ID = 'helm';
 
 memory.init();
 
-// Conversations the Helm has opened (helmPeerId:otherPeerId). A non-helm peer
-// may message a Helm peer only if its pair is here, reply-only upward.
-const helmContacts = new Set();
-
 function isHelmActor(peerId) {
   const peer = peers.get(peerId);
   return !!peer && peer.team_id === HELM_TEAM_ID;
@@ -488,17 +484,14 @@ const handlers = {
       }
     }
 
-    // Upward is reply-only: nobody cold-messages the Helm. A send to a
-    // helm-team peer is allowed only if that Helm peer already opened a
-    // conversation with the sender, so leads answer when spoken to and the
-    // orchestrator's attention is never claimable from below.
+    // Upward: a team's LEAD may always message the Helm, escalations,
+    // reports, questions, any time. Workers cannot; they go through their
+    // lead, so the orchestrator hears compressed reports, not raw streams.
     if (to?.team_id === HELM_TEAM_ID && from && from.team_id !== HELM_TEAM_ID) {
-      if (!helmContacts.has(`${to.id}:${from.id}`)) {
-        return { error: 'helm_initiates_contact' };
+      const leadName = leadNameFor(from.team_id);
+      if (!leadName || from.agent_name !== leadName) {
+        return { error: 'helm_reports_via_lead', lead: leadName };
       }
-    }
-    if (from?.team_id === HELM_TEAM_ID && to && to.team_id !== HELM_TEAM_ID) {
-      helmContacts.add(`${from.id}:${to.id}`); // reply channel now open
     }
 
     // Lateral: leads coordinate across teams directly (marketing lead asks
