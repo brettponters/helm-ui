@@ -188,7 +188,7 @@ const TOOLS = [
   },
   {
     name: 'recall_memory',
-    description: 'Semantic search over shared workspace memory. Use when you need context beyond your own session: what other teams did, past decisions, known quirks.',
+    description: 'Semantic search over workspace memory. You see your own team\'s memories plus what the Helm has published as shared (client teams see only their own). Use when you need context beyond your own session: past decisions, known quirks, prior work.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -223,7 +223,7 @@ const HELM_TOOLS = [
         id: { type: 'string', description: 'Memory id (from review_memory_inbox or recall_memory)' },
         text: { type: 'string', description: 'Replacement text (optional, promote/update)' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Replacement tags (optional)' },
-        team: { type: 'string', description: 'Scope memory to a team id, or omit for workspace-wide' },
+        team: { type: 'string', description: 'A team id to keep this memory in that team\'s sandbox, or "shared" to publish to all operations teams (never visible to client teams). Omit to leave scope unchanged.' },
       },
       required: ['action', 'id'],
     },
@@ -295,6 +295,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         if (r.error === 'cross_team_leads_only') {
           return text(`Refused: cross-team messages are lead-to-lead only. ${r.your_lead ? `Escalate through your lead ("${r.your_lead}")` : 'Escalate through your lead'}${r.their_lead ? `, who can reach their lead ("${r.their_lead}")` : ''}.`, true);
         }
+        if (r.error === 'client_teams_isolated') {
+          return text('Refused: client teams are isolated from each other. If this genuinely needs cross-client coordination, the Helm orchestrator handles it.', true);
+        }
         return r.ok ? text(`Message sent to ${target}.`) : text(`Failed: ${r.error}`, true);
       }
       case 'message_team': {
@@ -331,7 +334,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         return text(`Memory saved to the ${where} (id ${r.id}${r.semantic ? '' : ', semantic indexing pending'}).`);
       }
       case 'recall_memory': {
-        const r = await brokerFetch('/memory/search', { query: args.query, k: args.limit || 8 });
+        const r = await brokerFetch('/memory/search', { from_id: myId, query: args.query, k: args.limit || 8 });
         if (r.error) return text(`Failed: ${r.error}`, true);
         if (!r.results.length) return text('No matching memories.');
         const lines = r.results.map(m => {

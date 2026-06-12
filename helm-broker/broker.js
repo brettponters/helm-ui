@@ -246,6 +246,13 @@ function leadNameFor(teamId) {
   return lead?.name || null;
 }
 
+// Operations teams are VERA-internal (the default); client teams are sealed
+// sandboxes for client work. Clients never receive shared memory and their
+// leads may coordinate with operations leads but never with other clients.
+function isClientTeam(teamId) {
+  return workspace?.teams?.find(t => t.id === teamId)?.kind === 'client';
+}
+
 function uid() {
   return crypto.randomBytes(4).toString('hex');
 }
@@ -477,7 +484,8 @@ const handlers = {
 
     // Lateral: leads coordinate across teams directly (marketing lead asks
     // legal lead), but only lead-to-lead, workers stay within their team and
-    // escalate through their own lead.
+    // escalate through their own lead. Client teams are sandboxes: their leads
+    // may reach operations leads (and vice versa), never another client's.
     if (from && to && from.team_id !== to.team_id
         && from.team_id !== HELM_TEAM_ID && to.team_id !== HELM_TEAM_ID) {
       const fromIsLead = from.agent_name === leadNameFor(from.team_id);
@@ -488,6 +496,9 @@ const handlers = {
           your_lead: leadNameFor(from.team_id),
           their_lead: leadNameFor(to.team_id),
         };
+      }
+      if (isClientTeam(from.team_id) && isClientTeam(to.team_id)) {
+        return { error: 'client_teams_isolated' };
       }
     }
 
@@ -558,21 +569,31 @@ const handlers = {
 
   async 'POST /memory/add'(body) {
     const from = body.from_id ? peers.get(body.from_id) : null;
+    const fromHelm = !!from && isHelmActor(from.id);
     const { entry, semantic } = await memory.addMemory({
       text: body.text,
       tags: body.tags,
-      team: body.team ?? from?.team_id ?? null,
+      // Memory is team-scoped by default, need-to-know until the Helm shares
+      // it. The Helm's own adds default to shared (team null).
+      team: fromHelm ? (body.team ?? null) : (from?.team_id ?? null),
       source: from ? { peer_id: from.id, agent_name: from.agent_name, team_id: from.team_id } : null,
       // The Helm's own adds are trusted straight into the curated store.
-      status: from && isHelmActor(from.id) ? 'curated' : 'inbox',
+      status: fromHelm ? 'curated' : 'inbox',
     });
     return { ok: true, id: entry.id, status: entry.status, semantic };
   },
 
   async 'POST /memory/search'(body) {
-    const { results, semantic } = await memory.search(body.query, {
-      k: body.k, team: body.team ?? null,
-    });
+    // Visibility is derived from WHO is asking, never from request params:
+    // the Helm sees all, client teams see only their own, operations teams
+    // see their own plus shared, unknown callers see shared only.
+    const viewer = body.from_id ? peers.get(body.from_id) : null;
+    const scope = viewer && isHelmActor(viewer.id)
+      ? { all: true }
+      : viewer
+        ? { team: viewer.team_id, clientTeam: isClientTeam(viewer.team_id) }
+        : {};
+    const { results, semantic } = await memory.search(body.query, { k: body.k, ...scope });
     return {
       semantic,
       results: results.map(r => ({
@@ -590,19 +611,22 @@ const handlers = {
 
   async 'POST /memory/curate'(body) {
     if (!isHelmActor(body.actor_id)) return { error: 'forbidden_not_helm' };
+    // team: 'shared' publishes to all operations teams (stored as null);
+    // a team id keeps/moves the memory into that team's sandbox.
+    const teamPatch = body.team === 'shared' ? null : body.team;
     switch (body.action) {
       case 'promote': {
         const patch = { status: 'curated' };
         if (body.text !== undefined) patch.text = body.text;
         if (body.tags !== undefined) patch.tags = body.tags;
-        if (body.team !== undefined) patch.team = body.team;
+        if (body.team !== undefined) patch.team = teamPatch;
         return { ok: true, entry: memory.updateMemory(body.id, patch) };
       }
       case 'update': {
         const patch = {};
         if (body.text !== undefined) patch.text = body.text;
         if (body.tags !== undefined) patch.tags = body.tags;
-        if (body.team !== undefined) patch.team = body.team;
+        if (body.team !== undefined) patch.team = teamPatch;
         return { ok: true, entry: memory.updateMemory(body.id, patch) };
       }
       case 'delete':

@@ -321,8 +321,14 @@ export function stats() {
  * Hybrid search over all live entries (inbox + curated, both are knowledge).
  * Semantic when a key is configured, keyword-only otherwise, the response
  * says which, so callers never mistake degraded recall for full recall.
+ *
+ * Visibility: entries with team=null are "shared" (published by the Helm).
+ *   all: true           , the Helm: everything, no filter
+ *   team + clientTeam   , client teams are sandboxes: ONLY their own entries
+ *   team                , operations teams: their own entries + shared
+ *   (neither)           , unidentified callers: shared entries only
  */
-export async function search(query, { k = 8, team = null } = {}) {
+export async function search(query, { k = 8, team = null, all = false, clientTeam = false } = {}) {
   if (typeof query !== 'string' || !query.trim()) throw new Error('query required');
   const useSemantic = semanticAvailable();
 
@@ -338,7 +344,11 @@ export async function search(query, { k = 8, team = null } = {}) {
   }
 
   let pool = [...entries.values()];
-  if (team) pool = pool.filter(e => !e.team || e.team === team);
+  if (!all) {
+    pool = pool.filter(e => clientTeam
+      ? (team && e.team === team)
+      : (!e.team || (team && e.team === team)));
+  }
 
   const scored = pool.map(e => {
     const kw = keywordScore(query, e);

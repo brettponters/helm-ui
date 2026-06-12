@@ -139,6 +139,29 @@
   width: 80px;
 }
 
+/* ops/client badge: client teams are sealed sandboxes (broker-enforced) */
+.tab-kind {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  padding: 1px 4px;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
+}
+
+.tab:hover .tab-kind { opacity: 1; }
+
+.tab-kind--client {
+  opacity: 1;
+  color: var(--text);
+  border-color: var(--border-hover);
+}
+
+.tab-kind:hover { color: var(--text); border-color: var(--border-hover); }
+
 /* delete affordance, hidden until the tab is hovered */
 .tab-del {
   font-size: 9px;
