@@ -183,20 +183,31 @@ async function storeVector(id, vector) {
 
 // Embed entries that are missing vectors (new adds where the API call failed,
 // or everything added while no key was configured). Self-healing on search.
+// Re-entry guard: concurrent searches must not double-embed the same entries
+// (duplicate vectors.jsonl lines + wasted API spend), overlapping calls skip,
+// and the next search picks up whatever is still missing.
+let backfillRunning = false;
+
 async function backfillVectors(limit) {
-  if (!semanticAvailable()) return;
-  const missing = [...entries.values()].filter(e => !vectors.has(e.id)).slice(0, limit);
-  if (!missing.length) return;
-  for (let i = 0; i < missing.length; i += EMBED_BATCH_MAX) {
-    const batch = missing.slice(i, i + EMBED_BATCH_MAX);
-    const vecs = await embed(batch.map(embeddableText));
-    for (let j = 0; j < batch.length; j++) await storeVector(batch[j].id, vecs[j]);
+  if (!semanticAvailable() || backfillRunning) return;
+  backfillRunning = true;
+  try {
+    const missing = [...entries.values()].filter(e => !vectors.has(e.id)).slice(0, limit);
+    if (!missing.length) return;
+    for (let i = 0; i < missing.length; i += EMBED_BATCH_MAX) {
+      const batch = missing.slice(i, i + EMBED_BATCH_MAX);
+      const vecs = await embed(batch.map(embeddableText));
+      for (let j = 0; j < batch.length; j++) await storeVector(batch[j].id, vecs[j]);
+    }
+  } finally {
+    backfillRunning = false;
   }
 }
 
 // ─── Scoring ──────────────────────────────────────────────────────────────────
 
 export function cosine(a, b) {
+  if (a.length !== b.length) return 0; // dimension mismatch (e.g. model change) must not produce a silent garbage score
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];

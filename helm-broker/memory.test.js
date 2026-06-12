@@ -69,6 +69,7 @@ test('cosine: identical vectors score 1, orthogonal score 0', () => {
   assert.ok(Math.abs(memory.cosine([1, 0], [1, 0]) - 1) < 1e-9);
   assert.equal(memory.cosine([1, 0], [0, 1]), 0);
   assert.equal(memory.cosine([0, 0], [1, 1]), 0); // zero vector guard
+  assert.equal(memory.cosine([1, 0, 0], [1, 0]), 0); // dimension mismatch never scores
 });
 
 test('keywordScore: fraction of query terms found, exact ids always hit', () => {
@@ -161,6 +162,29 @@ test('semantic search ranks related text above keyword-miss text', async () => {
   assert.equal(semantic, true);
   assert.ok(results.length >= 1);
   assert.match(results[0].entry.text, /Postgres/);
+});
+
+test('concurrent searches never double-embed: no duplicate vector lines', async () => {
+  await memory.addMemory({ text: 'fact one about postgres database' });
+  await memory.addMemory({ text: 'fact two about email outreach' });
+  assert.equal(memory.stats().embedded, 0);
+
+  process.env.HELM_OPENAI_KEY = 'test-key';
+  // Slow stub so the two searches genuinely overlap in the backfill window.
+  globalThis.fetch = async (url, opts) => {
+    await new Promise(r => setTimeout(r, 20));
+    const { input } = JSON.parse(opts.body);
+    const texts = Array.isArray(input) ? input : [input];
+    return { ok: true, json: async () => ({ data: texts.map(t => ({ embedding: fakeVector(t) })) }) };
+  };
+
+  await Promise.all([memory.search('postgres'), memory.search('email')]);
+  await memory.search('postgres'); // sweep up anything the skipped call left
+
+  const lines = fs.readFileSync(path.join(TMP, 'memory', 'vectors.jsonl'), 'utf8')
+    .trim().split('\n').map(l => JSON.parse(l).id);
+  assert.equal(new Set(lines).size, lines.length, `duplicate vector lines: ${lines.join(',')}`);
+  assert.equal(memory.stats().embedded, 2);
 });
 
 test('vectors backfill on search after a key appears', async () => {

@@ -20,6 +20,7 @@ import * as memory from './memory.js';
 const PORT = parseInt(process.env.HELM_BROKER_PORT || process.env.CLAUDE_PEERS_PORT || '7900', 10);
 const STALE_MS = 45000;
 const HEARTBEAT_INTERVAL = 30000;
+const MAX_BODY_BYTES = 1024 * 1024; // a runaway client must not OOM the broker
 
 // Browser security: only the Helm UI may drive the broker from a browser.
 // Requests with no Origin header (the MCP servers, curl, other local tooling)
@@ -324,6 +325,12 @@ const handlers = {
   'POST /set-team'(body) {
     const peer = peers.get(body.id);
     if (!peer) return { error: 'not_found' };
+    // The helm team grants memory-curation rights; switching into it after
+    // registration would be a privilege escalation. Orchestrator sessions get
+    // the team at registration (HELM_TEAM env from their panel), never here.
+    if ((body.team_id || '') === HELM_TEAM_ID && peer.team_id !== HELM_TEAM_ID) {
+      return { error: 'forbidden_helm_team' };
+    }
     peer.team_id   = body.team_id || 'default';
     peer.last_seen = now();
     return { ok: true };
@@ -616,8 +623,19 @@ const server = http.createServer((req, res) => {
   }
 
   let body = '';
-  req.on('data', chunk => body += chunk);
+  let tooLarge = false;
+  req.on('data', chunk => {
+    if (tooLarge) return;
+    body += chunk;
+    if (body.length > MAX_BODY_BYTES) {
+      tooLarge = true;
+      res.writeHead(413, cors);
+      res.end(JSON.stringify({ error: 'body_too_large' }));
+      req.destroy();
+    }
+  });
   req.on('end', async () => {
+    if (tooLarge) return;
     try {
       const parsed = body ? JSON.parse(body) : {};
       const result = await handler(parsed, url.searchParams); // handlers may be async (memory endpoints embed over the network)
