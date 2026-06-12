@@ -15,6 +15,10 @@ interface TerminalProps {
   command?: string;
   name?: string;
   team?: string;
+  /** Stable teammate id, the persistent session key on the PTY daemon.
+      With an id, the shell survives unmounts and app restarts (reattach +
+      replay); without one the session dies with the socket. */
+  id?: string;
   /** Called when a Claude process starts/stops in this panel's shell. */
   onClaudeActive?: (active: boolean) => void;
   /** Bumped by the parent to force a fresh shell (e.g. after a panel restart). */
@@ -24,6 +28,8 @@ interface TerminalProps {
 export interface TerminalHandle {
   /** Type a command into the live shell (as if the user typed it). */
   runCommand: (cmd: string) => void;
+  /** Explicitly end the persistent session (shell dies). Used on remove. */
+  kill: () => void;
 }
 
 // Shared ANSI palette (muted, terminal-native). Foreground/cursor/selection are
@@ -67,7 +73,7 @@ const SEARCH_DECORATIONS = {
 };
 
 export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
-  { cwd, command, name, team, onClaudeActive, sessionKey },
+  { cwd, command, name, team, id, onClaudeActive, sessionKey },
   ref,
 ) {
   const prefs = usePrefs();
@@ -83,12 +89,18 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  // Let the panel type a command into the live shell (e.g. on Save → run it).
+  // Let the panel type a command into the live shell (e.g. on Save → run it)
+  // or explicitly end the persistent session (remove teammate).
   useImperativeHandle(ref, () => ({
     runCommand: (cmd: string) => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       ws.send(JSON.stringify({ type: 'input', data: /[\r\n]$/.test(cmd) ? cmd : cmd + '\r' }));
+    },
+    kill: () => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: 'kill' }));
     },
   }), []);
 
@@ -147,6 +159,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     });
 
     const params = new URLSearchParams({ cwd });
+    if (id)                   params.set('id', id);
     if (command)              params.set('cmd', command);
     if (spawnMeta.current.name) params.set('name', spawnMeta.current.name);
     if (spawnMeta.current.team) params.set('team', spawnMeta.current.team);
@@ -204,7 +217,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       wsRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cwd, command, sessionKey]);
+  }, [cwd, command, sessionKey, id]);
 
   // Live-apply theme/font/cursor changes to the running terminal, no restart,
   // so the shell session is preserved while the look updates.

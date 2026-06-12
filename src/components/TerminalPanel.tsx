@@ -186,7 +186,13 @@ export function TerminalPanel({
           </button>
           <button
             className="panel-btn panel-btn--remove"
-            onClick={e => { e.stopPropagation(); onRemove(); }}
+            onClick={e => {
+              e.stopPropagation();
+              // End the persistent session too, removal is the one place a
+              // shell should actually die rather than detach.
+              termRef.current?.kill();
+              onRemove();
+            }}
             title="Remove teammate"
           >
             <X size={14} strokeWidth={1.75} />
@@ -198,6 +204,7 @@ export function TerminalPanel({
 
       <Terminal
         ref={termRef}
+        id={teammate.id}
         cwd={teammate.cwd}
         command={teammate.command && teammate.command !== 'claude' ? teammate.command : undefined}
         name={teammate.name}

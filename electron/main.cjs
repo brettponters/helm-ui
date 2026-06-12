@@ -23,7 +23,7 @@ const ROOT = path.join(__dirname, '..');
 
 const children = [];
 
-function spawnNode(scriptRelPath, label, args = []) {
+function nodeBin() {
   // Packaged: run the scripts under Electron's own Node (ELECTRON_RUN_AS_NODE)
   //   so the app needs no system Node; native deps are rebuilt to Electron's ABI.
   // Dev: use system Node, where node-pty's prebuilt binary already matches.
@@ -33,6 +33,12 @@ function spawnNode(scriptRelPath, label, args = []) {
     bin = process.execPath;
     env.ELECTRON_RUN_AS_NODE = '1';
   }
+  return { bin, env };
+}
+
+// A child of the app: dies with the window (dev UI server only).
+function spawnNode(scriptRelPath, label, args = []) {
+  const { bin, env } = nodeBin();
   const child = spawn(bin, [path.join(ROOT, scriptRelPath), ...args], {
     cwd: ROOT,
     env,
@@ -40,6 +46,29 @@ function spawnNode(scriptRelPath, label, args = []) {
   });
   child.on('error', err => console.error(`[helm-app] failed to start ${label}:`, err.message));
   children.push(child);
+  return child;
+}
+
+// A daemon that OUTLIVES the app: broker and PTY server. Quitting Helm leaves
+// them (and every shell + claude session they own) running; relaunching the
+// app finds them via their ports — each daemon exits on EADDRINUSE, deferring
+// to the one already there. Logs go to ~/.helm/logs since stdio is detached.
+function spawnDaemon(scriptRelPath, label) {
+  const { bin, env } = nodeBin();
+  const logDir = path.join(require('os').homedir(), '.helm', 'logs');
+  let out = 'ignore';
+  try {
+    fs.mkdirSync(logDir, { recursive: true });
+    out = fs.openSync(path.join(logDir, `${label}.log`), 'a');
+  } catch { /* no logs, daemon still runs */ }
+  const child = spawn(bin, [path.join(ROOT, scriptRelPath)], {
+    cwd: ROOT,
+    env,
+    detached: true,
+    stdio: ['ignore', out, out],
+  });
+  child.on('error', err => console.error(`[helm-app] failed to start ${label}:`, err.message));
+  child.unref();
   return child;
 }
 
@@ -121,8 +150,10 @@ async function boot() {
     try { app.dock.setIcon(path.join(ROOT, 'build', 'icon-512.png')); } catch { /* ignore */ }
   }
 
-  spawnNode('helm-broker/broker.js', 'broker');
-  spawnNode('helm-broker/pty-server.js', 'pty');
+  // Daemons, not children: they keep running (with every shell and claude
+  // session) after the app quits, and a relaunch reattaches to them.
+  spawnDaemon('helm-broker/broker.js', 'broker');
+  spawnDaemon('helm-broker/pty-server.js', 'pty');
 
   if (app.isPackaged) {
     startStaticServer(path.join(ROOT, 'dist'));

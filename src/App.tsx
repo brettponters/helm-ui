@@ -120,19 +120,16 @@ export default function App() {
           onOpenSettings={() => setSettingsOpen(true)}
         />
 
-        {/* All teams stay mounted so their shells keep running; only the active
-            one is shown. Hiding (not unmounting) preserves every PTY session. */}
-        {teams.map((team: Workspace['teams'][number]) => (
-          <div
+        {/* Only the active team is mounted. Shells live in the PTY daemon and
+            survive unmounting (and app restarts), switching teams reattaches
+            and replays recent output, so hidden teams cost no renderer memory. */}
+        {teams.filter((team: Workspace['teams'][number]) => team.id === activeTeamId).map(team => (
+          <TeamWorkspace
             key={team.id}
-            style={{ display: team.id === activeTeamId ? 'contents' : 'none' }}
-          >
-            <TeamWorkspace
-              team={team}
-              peers={peers}
-              onUpdateTeam={updateTeam}
-            />
-          </div>
+            team={team}
+            peers={peers}
+            onUpdateTeam={updateTeam}
+          />
         ))}
 
         {settingsOpen && (
