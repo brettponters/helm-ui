@@ -475,6 +475,22 @@ const handlers = {
       helmContacts.add(`${from.id}:${to.id}`); // reply channel now open
     }
 
+    // Lateral: leads coordinate across teams directly (marketing lead asks
+    // legal lead), but only lead-to-lead, workers stay within their team and
+    // escalate through their own lead.
+    if (from && to && from.team_id !== to.team_id
+        && from.team_id !== HELM_TEAM_ID && to.team_id !== HELM_TEAM_ID) {
+      const fromIsLead = from.agent_name === leadNameFor(from.team_id);
+      const toIsLead = to.agent_name === leadNameFor(to.team_id);
+      if (!fromIsLead || !toIsLead) {
+        return {
+          error: 'cross_team_leads_only',
+          your_lead: leadNameFor(from.team_id),
+          their_lead: leadNameFor(to.team_id),
+        };
+      }
+    }
+
     const msg = {
       id:       ++msgCounter,
       from_id:  body.from_id,
