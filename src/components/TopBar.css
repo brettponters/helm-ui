@@ -21,15 +21,35 @@
 :root[data-electron] .topbar .tab-input,
 :root[data-electron] .topbar .action-btn,
 :root[data-electron] .topbar .tab-del,
-:root[data-electron] .topbar .tab-confirm {
+:root[data-electron] .topbar .tab-confirm,
+:root[data-electron] .topbar .topbar-logo {
   -webkit-app-region: no-drag;
 }
 
+/* The wordmark is the door to the orchestrator's own team. */
 .topbar-logo {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 4px 8px 4px 4px;
+  margin-left: -4px;
+  cursor: pointer;
+  transition: opacity var(--duration-fast);
+}
+
+.topbar-logo:hover .logo-text {
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.45);
+}
+
+.topbar-logo--active .logo-text {
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.6);
+}
+
+.topbar-logo--active .logo-mark {
+  opacity: 1;
 }
 
 .logo-mark {

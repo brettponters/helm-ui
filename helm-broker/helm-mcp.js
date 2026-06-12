@@ -33,6 +33,12 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 // network or interferes with a normal `claude` session.
 const ACTIVE = TEAM !== '';
 
+// Sessions on the orchestrator team ("the Helm") get global tools: every team
+// is visible, any teammate is reachable, and memory curation is unlocked. The
+// broker independently enforces curation rights by checking the actor's team,
+// so a non-helm session calling these endpoints directly is still refused.
+const IS_HELM = TEAM === 'helm';
+
 let myId = null;
 let myName = TEAMMATE; // updated if the agent renames itself
 
@@ -77,7 +83,22 @@ const mcp = new Server(
       experimental: { 'claude/channel': {} },
       tools: {},
     },
-    instructions: `You are a teammate in a Helm workspace. Other Claude Code teammates on your team can see you and message you.
+    instructions: IS_HELM
+      ? `You are the Helm, the orchestrator above every team in this workspace. You see all teams, you speak ONLY to team leads (chain of command, enforced by the broker), and you are the sole curator of workspace memory.
+
+IMPORTANT: When you receive a <channel source="helm-teammates" ...> message, RESPOND IMMEDIATELY. Pause what you are doing, reply with send_message, then resume.
+
+Tools:
+- list_teams: Every team, its live agents, and who its lead is
+- send_message: Message a team's LEAD (marked in list_teams). Messages to workers are refused, direct work through their lead.
+- message_team: Broadcast to your own helper team only
+- recall_memory / add_memory: Semantic workspace memory (your adds are curated immediately)
+- review_memory_inbox: Memories submitted by teammates awaiting your curation
+- curate_memory: Promote, update, or delete memories, only you can do this
+- set_summary / check_messages / rename_me: As usual
+
+Leads compress their team's state up to you; you set direction, connect teams, and remember. Review the memory inbox regularly; promote what matters, delete what's stale.`
+      : `You are a teammate in a Helm workspace. Other Claude Code teammates on your team can see you and message you.
 
 IMPORTANT: When you receive a <channel source="helm-teammates" ...> message, RESPOND IMMEDIATELY. Pause what you are doing, reply with send_message, then resume. Treat it like a teammate tapping you on the shoulder.
 
@@ -90,7 +111,8 @@ Tools:
 - set_summary: Set a 1-2 sentence summary of what you're working on (shown in Helm and to teammates)
 - check_messages: Manually check for new messages
 - rename_me: Rename your own panel in the Helm UI
-- preview_file: Show the user a specific file in Helm's preview (e.g. an output you produced or the file you want them to look at)
+- add_memory: Save a fact or observation to workspace memory (lands in the curation inbox)
+- recall_memory: Semantic search over workspace memory, use it when you need context beyond your own session
 
 When you start, call set_summary so your teammates and the Helm UI know what you're doing.`,
   }
@@ -149,19 +171,64 @@ const TOOLS = [
     },
   },
   {
-    name: 'preview_file',
-    description: "Show the user a specific file in Helm's preview pane (it renders code, PDFs, images, and CSVs, and updates live as you edit). Use it to surface something worth looking at, an output you produced or the file you're working on, not for every file you touch.",
+    name: 'add_memory',
+    description: 'Save a fact, decision, or observation to shared workspace memory. It lands in the curation inbox for the Helm to review (the Helm\'s own adds are curated immediately). Keep it self-contained: one fact per memory.',
     inputSchema: {
       type: 'object',
       properties: {
-        file: { type: 'string', description: 'Path of the file to preview (relative to your working directory, or absolute)' },
+        text: { type: 'string', description: 'The memory, a self-contained fact or observation (max 4000 chars)' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags for retrieval (e.g. ["palm", "migration"])' },
       },
-      required: ['file'],
+      required: ['text'],
+    },
+  },
+  {
+    name: 'recall_memory',
+    description: 'Semantic search over shared workspace memory. Use when you need context beyond your own session: what other teams did, past decisions, known quirks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What you want to know, in natural language' },
+        limit: { type: 'number', description: 'Max results (default 8)' },
+      },
+      required: ['query'],
     },
   },
 ];
 
-mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
+// Tools only the orchestrator team gets. The broker re-checks the actor's team
+// on every curation call, so this gating is UX, not the security boundary.
+const HELM_TOOLS = [
+  {
+    name: 'list_teams',
+    description: 'List every team in the workspace and its live agents (id, name, cwd, summary). Helm-only.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'review_memory_inbox',
+    description: 'List memories submitted by teammates that await curation. Promote the good ones with curate_memory, delete the noise. Helm-only.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'curate_memory',
+    description: 'Curate workspace memory: promote an inbox entry, update text/tags/team of any entry, or delete one. Helm-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['promote', 'update', 'delete'], description: 'What to do' },
+        id: { type: 'string', description: 'Memory id (from review_memory_inbox or recall_memory)' },
+        text: { type: 'string', description: 'Replacement text (optional, promote/update)' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Replacement tags (optional)' },
+        team: { type: 'string', description: 'Scope memory to a team id, or omit for workspace-wide' },
+      },
+      required: ['action', 'id'],
+    },
+  },
+];
+
+mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: IS_HELM ? [...TOOLS, ...HELM_TOOLS] : TOOLS,
+}));
 
 function text(t, isError) {
   return { content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) };
@@ -188,21 +255,29 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       case 'send_message': {
         const message = args.message;
         // Accept either a peer id or a teammate name, resolve names so the lead
-        // never has to copy cryptic ids.
+        // never has to copy cryptic ids. The Helm resolves across ALL teams.
         const target = String(args.to_id || '').trim();
         let toId = target;
-        const peers = await brokerFetch('/list-peers', { team_id: TEAM });
+        const peers = await brokerFetch('/list-peers', IS_HELM ? {} : { team_id: TEAM });
         if (!peers.some(p => p.id === target)) {
           const byName = peers.filter(p => (p.agent_name || '').toLowerCase() === target.toLowerCase());
           if (byName.length === 1) toId = byName[0].id;
-          else if (byName.length === 0) return text(`No teammate "${target}" on team "${TEAM}". Use list_teammates to see names/ids, or message_team to reach everyone.`, true);
-          else return text(`More than one teammate is named "${target}". Use their id from list_teammates.`, true);
+          else if (byName.length === 0) return text(`No teammate "${target}"${IS_HELM ? '' : ` on team "${TEAM}"`}. Use ${IS_HELM ? 'list_teams' : 'list_teammates'} to see names/ids.`, true);
+          else return text(`More than one teammate is named "${target}". Use their id from ${IS_HELM ? 'list_teams' : 'list_teammates'}.`, true);
         }
         const r = await brokerFetch('/send-message', { from_id: myId, to_id: toId, text: message });
+        if (r.error === 'helm_messages_leads_only') {
+          return text(`Refused: "${target}" is not the lead of team "${r.team}". The Helm messages leads only${r.lead ? `, that team's lead is "${r.lead}"` : ''}; direct the work through them.`, true);
+        }
         return r.ok ? text(`Message sent to ${target}.`) : text(`Failed: ${r.error}`, true);
       }
       case 'message_team': {
+        // Everyone broadcasts only to their own team, for the Helm that means
+        // its helper team; it reaches other teams through their leads.
         const r = await brokerFetch('/broadcast', { from_id: myId, team_id: TEAM, text: args.message });
+        if (r.error === 'helm_messages_leads_only') {
+          return text(`Refused: the Helm reaches a team through its lead${r.lead ? ` ("${r.lead}")` : ''}, not by broadcast.`, true);
+        }
         return text(`Broadcast to ${r.sent_to} teammate(s) on team "${TEAM}".`);
       }
       case 'set_summary': {
@@ -223,11 +298,54 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         myName = newName;
         return text(`Renamed your panel to "${newName}".`);
       }
-      case 'preview_file': {
-        const f = String(args.file || '').trim();
-        if (!f) return text('Provide a file path to preview.', true);
-        await brokerFetch('/ui-command', { type: 'open-preview', team: TEAM, teammate: myName, file: f });
-        return text(`Previewing ${f} in Helm.`);
+      case 'add_memory': {
+        const r = await brokerFetch('/memory/add', { from_id: myId, text: args.text, tags: args.tags });
+        if (!r.ok) return text(`Failed: ${r.error}`, true);
+        const where = r.status === 'curated' ? 'curated store' : 'curation inbox';
+        return text(`Memory saved to the ${where} (id ${r.id}${r.semantic ? '' : ', semantic indexing pending'}).`);
+      }
+      case 'recall_memory': {
+        const r = await brokerFetch('/memory/search', { query: args.query, k: args.limit || 8 });
+        if (r.error) return text(`Failed: ${r.error}`, true);
+        if (!r.results.length) return text('No matching memories.');
+        const lines = r.results.map(m => {
+          const meta = [m.status, ...(m.tags || [])].join(', ');
+          const src = m.source?.agent_name ? `, from ${m.source.agent_name}` : '';
+          return `[${m.id}] (${meta}, score ${m.score})${src}\n${m.text}`;
+        });
+        return text(`${r.results.length} memor${r.results.length === 1 ? 'y' : 'ies'} (${r.semantic ? 'semantic' : 'keyword-only'} search):\n\n${lines.join('\n\n')}`);
+      }
+      case 'list_teams': {
+        if (!IS_HELM) return text('list_teams is Helm-only.', true);
+        const { teams } = await fetch(`${BROKER_URL}/teams`).then(r => r.json());
+        if (!teams.length) return text('No live agents on any team.');
+        const blocks = teams.map(t => {
+          const members = t.peers.map(p => {
+            const isLead = t.lead && p.agent_name === t.lead;
+            return `  - ${p.agent_name || '(unnamed)'}${isLead ? ' ← LEAD' : ''} [${p.id}] cwd: ${p.cwd}${p.summary ? `\n    ${p.summary}` : ''}`;
+          });
+          const leadNote = t.lead ? `, lead: ${t.lead}` : ', no lead set';
+          return `team "${t.id}" (${t.peers.length} live${leadNote}):\n${members.join('\n')}`;
+        });
+        return text(`${blocks.join('\n\n')}\n\nYou may message only the LEAD of each team.`);
+      }
+      case 'review_memory_inbox': {
+        if (!IS_HELM) return text('review_memory_inbox is Helm-only.', true);
+        const r = await brokerFetch('/memory/inbox', { actor_id: myId });
+        if (r.error) return text(`Failed: ${r.error}`, true);
+        if (!r.entries.length) return text('Memory inbox is empty.');
+        const lines = r.entries.map(e =>
+          `[${e.id}] from ${e.source?.agent_name || 'unknown'} (team ${e.source?.team_id || '?'}, ${e.created_at})${e.tags?.length ? ` tags: ${e.tags.join(', ')}` : ''}\n${e.text}`);
+        return text(`${r.entries.length} inbox entr${r.entries.length === 1 ? 'y' : 'ies'} awaiting curation:\n\n${lines.join('\n\n')}\n\nUse curate_memory to promote, update, or delete each.`);
+      }
+      case 'curate_memory': {
+        if (!IS_HELM) return text('curate_memory is Helm-only.', true);
+        const r = await brokerFetch('/memory/curate', {
+          actor_id: myId, action: args.action, id: args.id,
+          text: args.text, tags: args.tags, team: args.team,
+        });
+        if (r.error) return text(`Failed: ${r.error}`, true);
+        return text(args.action === 'delete' ? `Memory ${args.id} deleted.` : `Memory ${args.id} ${args.action}d.`);
       }
       default:
         throw new Error(`Unknown tool: ${name}`);

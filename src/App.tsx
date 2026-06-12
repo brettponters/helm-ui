@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Team, Prefs, Workspace } from './types';
+import { HELM_TEAM_ID, HELM_ORCHESTRATOR_PROMPT } from './types';
 import { TopBar } from './components/TopBar';
 import { TeamWorkspace } from './components/TeamWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -10,15 +11,12 @@ import { useUiCommands } from './hooks/useUiCommands';
 import './styles/global.css';
 import './App.css';
 
-export interface PreviewRequest { team: string; teammate: string; file: string | null; nonce: number; }
-
 export default function App() {
   const { workspace, save } = useWorkspace();
   const { peers, connected } = usePeers();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null);
 
-  // Apply commands an agent issued via MCP (rename itself, open its preview).
+  // Apply commands an agent issued via MCP (rename its own panel).
   useUiCommands(cmds => {
     if (!workspace) return;
     let next = workspace;
@@ -32,10 +30,6 @@ export default function App() {
             : t),
         };
         changed = true;
-      } else if (c.type === 'open-preview' && c.team && c.teammate) {
-        next = { ...next, activeTeamId: c.team };
-        changed = true;
-        setPreviewRequest({ team: c.team, teammate: c.teammate, file: c.file ?? null, nonce: c.id });
       }
     }
     if (changed) save(next);
@@ -76,6 +70,31 @@ export default function App() {
     save({ ...workspace!, teams: remaining, activeTeamId: activeId });
   }
 
+  // The HELM wordmark opens the orchestrator's own team, created on first
+  // visit with "the-helm" pre-cast as the orchestrator (role + opus). It can
+  // grow helpers like any team, but never appears as a tab.
+  function openHelm() {
+    const existing = teams.find(t => t.id === HELM_TEAM_ID);
+    if (existing) {
+      save({ ...workspace!, activeTeamId: HELM_TEAM_ID });
+      return;
+    }
+    const helmTeam: Team = {
+      id: HELM_TEAM_ID,
+      name: 'THE HELM',
+      teammates: [{
+        id: `teammate-${crypto.randomUUID().slice(0, 8)}`,
+        name: 'the-helm',
+        command: 'claude',
+        cwd: '~/.helm/admiral',
+        status: 'running',
+        systemPrompt: HELM_ORCHESTRATOR_PROMPT,
+        model: 'opus',
+      }],
+    };
+    save({ ...workspace!, teams: [...teams, helmTeam], activeTeamId: HELM_TEAM_ID });
+  }
+
   function updateTeam(updated: Team) {
     save({ ...workspace!, teams: teams.map(t => (t.id === updated.id ? updated : t)) });
   }
@@ -88,14 +107,16 @@ export default function App() {
     <PrefsContext.Provider value={prefs}>
       <div className="app">
         <TopBar
-          teams={teams}
+          teams={teams.filter(t => t.id !== HELM_TEAM_ID)}
           activeTeamId={activeTeamId}
           brokerConnected={connected}
           activeCount={peers.filter(p => p.team_id === activeTeamId).length}
+          helmActive={activeTeamId === HELM_TEAM_ID}
           onSelectTeam={setActiveTeam}
           onAddTeam={addTeam}
           onRenameTeam={renameTeam}
           onDeleteTeam={deleteTeam}
+          onOpenHelm={openHelm}
           onOpenSettings={() => setSettingsOpen(true)}
         />
 
@@ -110,7 +131,6 @@ export default function App() {
               team={team}
               peers={peers}
               onUpdateTeam={updateTeam}
-              previewRequest={previewRequest}
             />
           </div>
         ))}

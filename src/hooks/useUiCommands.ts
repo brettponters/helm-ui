@@ -5,11 +5,10 @@ const POLL_MS = 1000;
 
 export interface UiCommand {
   id: number;
-  type: 'rename' | 'open-preview';
+  type: 'rename';
   team?: string;
   teammate?: string;
   name?: string;
-  file?: string;
 }
 
 /**

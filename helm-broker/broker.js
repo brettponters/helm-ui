@@ -15,10 +15,12 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import * as memory from './memory.js';
 
 const PORT = parseInt(process.env.HELM_BROKER_PORT || process.env.CLAUDE_PEERS_PORT || '7900', 10);
 const STALE_MS = 45000;
 const HEARTBEAT_INTERVAL = 30000;
+const MAX_BODY_BYTES = 1024 * 1024; // a runaway client must not OOM the broker
 
 // Browser security: only the Helm UI may drive the broker from a browser.
 // Requests with no Origin header (the MCP servers, curl, other local tooling)
@@ -218,6 +220,28 @@ let workspace = loadWorkspace();
 const uiCommands = [];          // commands an agent (via MCP) asks the UI to run
 let cmdCounter = 0;
 
+// The orchestrator team. Peers registered under this team id get memory
+// curation rights and global visibility via the MCP's helm-only tools.
+const HELM_TEAM_ID = 'helm';
+
+memory.init();
+
+function isHelmActor(peerId) {
+  const peer = peers.get(peerId);
+  return !!peer && peer.team_id === HELM_TEAM_ID;
+}
+
+// A team's lead: the crowned teammate (layout.leadId) or, failing that, the
+// first teammate. The Helm orchestrator may only message leads, chain of
+// command is enforced here, not just suggested in prompts.
+function leadNameFor(teamId) {
+  const team = workspace?.teams?.find(t => t.id === teamId);
+  if (!team || !Array.isArray(team.teammates) || !team.teammates.length) return null;
+  const lead = (team.layout?.leadId && team.teammates.find(m => m.id === team.layout.leadId))
+    || team.teammates[0];
+  return lead?.name || null;
+}
+
 function uid() {
   return crypto.randomBytes(4).toString('hex');
 }
@@ -261,6 +285,7 @@ const handlers = {
       registered_at: ts,
       last_seen:    ts,
     });
+    memory.logEvent('register', { peer_id: id, agent_name: body.agent_name || null, team_id: body.team_id || 'default', cwd: body.cwd || '' });
     return { id };
   },
 
@@ -276,6 +301,7 @@ const handlers = {
     if (!peer) return { error: 'not_found' };
     peer.summary   = body.summary || '';
     peer.last_seen = now();
+    memory.logEvent('summary', { peer_id: peer.id, agent_name: peer.agent_name, team_id: peer.team_id, summary: peer.summary });
     return { ok: true };
   },
 
@@ -284,8 +310,12 @@ const handlers = {
   'POST /set-agent-name'(body) {
     const peer = peers.get(body.id);
     if (!peer) return { error: 'not_found' };
+    const prev = peer.agent_name;
     peer.agent_name = body.agent_name || peer.agent_name;
     peer.last_seen  = now();
+    if (peer.agent_name !== prev) {
+      memory.logEvent('rename', { peer_id: peer.id, team_id: peer.team_id, from: prev, to: peer.agent_name });
+    }
     return { ok: true };
   },
 
@@ -306,6 +336,12 @@ const handlers = {
   'POST /set-team'(body) {
     const peer = peers.get(body.id);
     if (!peer) return { error: 'not_found' };
+    // The helm team grants memory-curation rights; switching into it after
+    // registration would be a privilege escalation. Orchestrator sessions get
+    // the team at registration (HELM_TEAM env from their panel), never here.
+    if ((body.team_id || '') === HELM_TEAM_ID && peer.team_id !== HELM_TEAM_ID) {
+      return { error: 'forbidden_helm_team' };
+    }
     peer.team_id   = body.team_id || 'default';
     peer.last_seen = now();
     return { ok: true };
@@ -397,7 +433,8 @@ const handlers = {
     return { file: fileMeta(cwd, p) };
   },
 
-  // Helm UI endpoint, peers grouped by team
+  // Helm UI endpoint, peers grouped by team, annotated with each team's lead
+  // so the orchestrator knows whom it may message.
   'GET /teams'() {
     const map = {};
     for (const peer of peers.values()) {
@@ -405,10 +442,22 @@ const handlers = {
       if (!map[tid]) map[tid] = { id: tid, peers: [] };
       map[tid].peers.push(peer);
     }
-    return { teams: Object.values(map) };
+    return { teams: Object.values(map).map(t => ({ ...t, lead: leadNameFor(t.id) })) };
   },
 
   'POST /send-message'(body) {
+    const from = peers.get(body.from_id);
+    const to = peers.get(body.to_id);
+
+    // Chain of command: the Helm speaks only to team leads (its own helper
+    // team excepted). Workers report to their lead, leads report to the Helm.
+    if (from?.team_id === HELM_TEAM_ID && to && to.team_id !== HELM_TEAM_ID) {
+      const leadName = leadNameFor(to.team_id);
+      if (!leadName || to.agent_name !== leadName) {
+        return { error: 'helm_messages_leads_only', team: to.team_id, lead: leadName };
+      }
+    }
+
     const msg = {
       id:       ++msgCounter,
       from_id:  body.from_id,
@@ -419,11 +468,22 @@ const handlers = {
       delivered: false,
     };
     messages.push(msg);
+    memory.logEvent('message', {
+      from_id: body.from_id, from_name: from?.agent_name || null,
+      to_id: body.to_id, to_name: to?.agent_name || null,
+      team_id: from?.team_id || null, text: body.text,
+    });
     return { ok: true, id: msg.id };
   },
 
   // Broadcast to all peers in a team
   'POST /broadcast'(body) {
+    const sender = peers.get(body.from_id);
+    // The Helm may broadcast only to its own helper team; to move another
+    // team it messages that team's lead.
+    if (sender?.team_id === HELM_TEAM_ID && body.team_id !== HELM_TEAM_ID) {
+      return { error: 'helm_messages_leads_only', team: body.team_id, lead: leadNameFor(body.team_id) };
+    }
     const teamPeers = Array.from(peers.values())
       .filter(p => p.team_id === body.team_id && p.id !== body.from_id);
     const ts = now();
@@ -438,6 +498,11 @@ const handlers = {
         delivered: false,
       });
     }
+    const from = peers.get(body.from_id);
+    memory.logEvent('broadcast', {
+      from_id: body.from_id, from_name: from?.agent_name || null,
+      team_id: body.team_id, sent_to: teamPeers.length, text: body.text,
+    });
     return { ok: true, sent_to: teamPeers.length };
   },
 
@@ -448,8 +513,74 @@ const handlers = {
   },
 
   'POST /unregister'(body) {
+    const peer = peers.get(body.id);
+    if (peer) memory.logEvent('unregister', { peer_id: peer.id, agent_name: peer.agent_name, team_id: peer.team_id });
     peers.delete(body.id);
     return { ok: true };
+  },
+
+  // ─── Memory ────────────────────────────────────────────────────────────────
+  // Any teammate may add and search. Curation (promote/update/delete, reading
+  // the inbox) is restricted to peers on the Helm orchestrator team.
+
+  async 'POST /memory/add'(body) {
+    const from = body.from_id ? peers.get(body.from_id) : null;
+    const { entry, semantic } = await memory.addMemory({
+      text: body.text,
+      tags: body.tags,
+      team: body.team ?? from?.team_id ?? null,
+      source: from ? { peer_id: from.id, agent_name: from.agent_name, team_id: from.team_id } : null,
+      // The Helm's own adds are trusted straight into the curated store.
+      status: from && isHelmActor(from.id) ? 'curated' : 'inbox',
+    });
+    return { ok: true, id: entry.id, status: entry.status, semantic };
+  },
+
+  async 'POST /memory/search'(body) {
+    const { results, semantic } = await memory.search(body.query, {
+      k: body.k, team: body.team ?? null,
+    });
+    return {
+      semantic,
+      results: results.map(r => ({
+        id: r.entry.id, text: r.entry.text, tags: r.entry.tags, team: r.entry.team,
+        status: r.entry.status, source: r.entry.source,
+        updated_at: r.entry.updated_at, score: Math.round(r.score * 1000) / 1000,
+      })),
+    };
+  },
+
+  'POST /memory/inbox'(body) {
+    if (!isHelmActor(body.actor_id)) return { error: 'forbidden_not_helm' };
+    return { entries: memory.inbox() };
+  },
+
+  async 'POST /memory/curate'(body) {
+    if (!isHelmActor(body.actor_id)) return { error: 'forbidden_not_helm' };
+    switch (body.action) {
+      case 'promote': {
+        const patch = { status: 'curated' };
+        if (body.text !== undefined) patch.text = body.text;
+        if (body.tags !== undefined) patch.tags = body.tags;
+        if (body.team !== undefined) patch.team = body.team;
+        return { ok: true, entry: memory.updateMemory(body.id, patch) };
+      }
+      case 'update': {
+        const patch = {};
+        if (body.text !== undefined) patch.text = body.text;
+        if (body.tags !== undefined) patch.tags = body.tags;
+        if (body.team !== undefined) patch.team = body.team;
+        return { ok: true, entry: memory.updateMemory(body.id, patch) };
+      }
+      case 'delete':
+        return memory.deleteMemory(body.id);
+      default:
+        return { error: 'bad_action' };
+    }
+  },
+
+  'GET /memory/stats'() {
+    return memory.stats();
   },
 
   // Persisted workspace config for the UI (and, later, the control-MCP).
@@ -520,11 +651,22 @@ const server = http.createServer((req, res) => {
   }
 
   let body = '';
-  req.on('data', chunk => body += chunk);
-  req.on('end', () => {
+  let tooLarge = false;
+  req.on('data', chunk => {
+    if (tooLarge) return;
+    body += chunk;
+    if (body.length > MAX_BODY_BYTES) {
+      tooLarge = true;
+      res.writeHead(413, cors);
+      res.end(JSON.stringify({ error: 'body_too_large' }));
+      req.destroy();
+    }
+  });
+  req.on('end', async () => {
+    if (tooLarge) return;
     try {
       const parsed = body ? JSON.parse(body) : {};
-      const result = handler(parsed, url.searchParams);
+      const result = await handler(parsed, url.searchParams); // handlers may be async (memory endpoints embed over the network)
       res.writeHead(200, cors);
       res.end(JSON.stringify(result));
     } catch (err) {
