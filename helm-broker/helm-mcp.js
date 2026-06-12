@@ -347,16 +347,23 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       case 'list_teams': {
         if (!IS_HELM) return text('list_teams is Helm-only.', true);
         const { teams } = await fetch(`${BROKER_URL}/teams`).then(r => r.json());
-        if (!teams.length) return text('No live agents on any team.');
-        const blocks = teams.map(t => {
+        const others = teams.filter(t => t.id !== 'helm');
+        if (!others.length) return text('No teams configured yet.');
+        const blocks = others.map(t => {
+          const liveNames = new Set(t.peers.map(p => p.agent_name));
           const members = t.peers.map(p => {
             const isLead = t.lead && p.agent_name === t.lead;
-            return `  - ${p.agent_name || '(unnamed)'}${isLead ? ' ← LEAD' : ''} [${p.id}] cwd: ${p.cwd}${p.summary ? `\n    ${p.summary}` : ''}`;
+            return `  ● ${p.agent_name || '(unnamed)'}${isLead ? ' ← LEAD' : ''} [${p.id}] cwd: ${p.cwd}${p.summary ? `\n    ${p.summary}` : ''}`;
           });
-          const leadNote = t.lead ? `, lead: ${t.lead}` : ', no lead set';
-          return `team "${t.id}" (${t.peers.length} live${leadNote}):\n${members.join('\n')}`;
+          const offline = (t.configured || []).filter(n => !liveNames.has(n));
+          if (offline.length) {
+            members.push(`  ○ offline: ${offline.map(n => n === t.lead ? `${n} (LEAD)` : n).join(', ')}`);
+          }
+          const head = `${t.name} [${t.kind}] lead: ${t.lead || 'none set'}, ${t.peers.length} live of ${(t.configured || []).length} configured`;
+          if (!members.length) return `${head}\n  (empty team)`;
+          return `${head}:\n${members.join('\n')}`;
         });
-        return text(`${blocks.join('\n\n')}\n\nYou may message only the LEAD of each team.`);
+        return text(`${blocks.join('\n\n')}\n\nYou may message only the LEAD of each team. Offline members exist but aren't running claude helm yet.`);
       }
       case 'review_memory_inbox': {
         if (!IS_HELM) return text('review_memory_inbox is Helm-only.', true);

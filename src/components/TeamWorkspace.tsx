@@ -68,11 +68,22 @@ export function TeamWorkspace({ team, peers, onUpdateTeam }: TeamWorkspaceProps)
     patchLayout({ mode: next, leadId: next === 'lead' ? leadId : team.layout?.leadId });
   }
 
+  // New teammates inherit the tab's name: team MARKETING gets "marketing",
+  // then "marketing-2", "marketing-3", so the first (usually the lead)
+  // literally carries the team's name when the Helm addresses it.
+  function defaultName(): string {
+    const base = team.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'agent';
+    const used = new Set(team.teammates.map(t => t.name.toLowerCase()));
+    let name = base;
+    for (let n = 2; used.has(name); n++) name = `${base}-${n}`;
+    return name;
+  }
+
   function addTeammate(side?: 'left' | 'right') {
     const id = `teammate-${crypto.randomUUID().slice(0, 8)}`;
     const newTeammate: Teammate = {
       id,
-      name: `teammate-${String(team.teammates.length + 1).padStart(2, '0')}`,
+      name: defaultName(),
       command: 'claude',
       cwd: '~/',
       status: 'running',
