@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Teammate } from '../types';
 import type { Peer } from '../hooks/usePeers';
 import { Eye, X, Drama } from 'lucide-react';
