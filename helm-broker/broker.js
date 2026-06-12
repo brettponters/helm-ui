@@ -444,16 +444,35 @@ const handlers = {
     return { file: fileMeta(cwd, p) };
   },
 
-  // Helm UI endpoint, peers grouped by team, annotated with each team's lead
-  // so the orchestrator knows whom it may message.
+  // The org chart: every team configured in the workspace, name, kind, lead,
+  // configured members, overlaid with whoever is live. A team with nobody
+  // running still exists; the Helm must see the whole organization, not just
+  // the agents that happen to be registered right now.
   'GET /teams'() {
-    const map = {};
+    const live = {};
     for (const peer of peers.values()) {
-      const tid = peer.team_id;
-      if (!map[tid]) map[tid] = { id: tid, peers: [] };
-      map[tid].peers.push(peer);
+      (live[peer.team_id] ||= []).push(peer);
     }
-    return { teams: Object.values(map).map(t => ({ ...t, lead: leadNameFor(t.id) })) };
+    const seen = new Set();
+    const teams = [];
+    for (const t of workspace?.teams || []) {
+      seen.add(t.id);
+      teams.push({
+        id: t.id,
+        name: t.name,
+        kind: t.kind === 'client' ? 'client' : 'ops',
+        lead: leadNameFor(t.id),
+        configured: Array.isArray(t.teammates) ? t.teammates.map(m => m.name) : [],
+        peers: live[t.id] || [],
+      });
+    }
+    // Peers on team ids the workspace doesn't know (legacy registrations).
+    for (const [tid, ps] of Object.entries(live)) {
+      if (!seen.has(tid)) {
+        teams.push({ id: tid, name: tid, kind: 'ops', lead: leadNameFor(tid), configured: [], peers: ps });
+      }
+    }
+    return { teams };
   },
 
   'POST /send-message'(body) {
