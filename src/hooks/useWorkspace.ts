@@ -3,6 +3,8 @@ import type { Workspace } from '../types';
 import { DEFAULT_PREFS } from '../types';
 import { MOCK_TEAMS } from '../data/mock';
 
+type Updater = Workspace | ((prev: Workspace) => Workspace);
+
 const BROKER = 'http://127.0.0.1:7900';
 const SAVE_DEBOUNCE_MS = 400;
 
@@ -34,7 +36,11 @@ async function persist(ws: Workspace): Promise<void> {
 
 interface UseWorkspace {
   workspace: Workspace | null; // null while loading
-  save: (next: Workspace) => void;
+  // Accepts a functional updater so every mutation applies against the FRESHEST
+  // state, never a captured stale snapshot, otherwise a late save from an old
+  // closure (a layout auto-save, a poll) could clobber a concurrent change like
+  // a team deletion and resurrect it.
+  save: (next: Updater) => void;
 }
 
 /**
@@ -45,6 +51,10 @@ interface UseWorkspace {
 export function useWorkspace(): UseWorkspace {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The freshest workspace, updated synchronously inside every state update so
+  // the debounced persist always writes the latest merged result rather than
+  // whatever snapshot a particular caller happened to capture.
+  const latest = useRef<Workspace | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,9 +68,12 @@ export function useWorkspace(): UseWorkspace {
       }
       if (cancelled) return;
       if (ws && Array.isArray(ws.teams) && ws.teams.length) {
-        setWorkspace(migrate(ws));
+        const migrated = migrate(ws);
+        latest.current = migrated;
+        setWorkspace(migrated);
       } else {
         const seeded = seedDefault();
+        latest.current = seeded;
         setWorkspace(seeded);
         persist(seeded);
       }
@@ -68,10 +81,16 @@ export function useWorkspace(): UseWorkspace {
     return () => { cancelled = true; };
   }, []);
 
-  const save = useCallback((next: Workspace) => {
-    setWorkspace(next);
+  const save = useCallback((next: Updater) => {
+    setWorkspace(prev => {
+      const base = prev ?? latest.current;
+      if (!base) return prev;
+      const resolved = typeof next === 'function' ? next(base) : next;
+      latest.current = resolved;
+      return resolved;
+    });
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => persist(next), SAVE_DEBOUNCE_MS);
+    saveTimer.current = setTimeout(() => { if (latest.current) persist(latest.current); }, SAVE_DEBOUNCE_MS);
   }, []);
 
   return { workspace, save };

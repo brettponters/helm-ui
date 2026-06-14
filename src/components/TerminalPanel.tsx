@@ -10,26 +10,19 @@ import './TerminalPanel.css';
 
 // Every Helm agent launches with the workspace operating doctrine baked in.
 // The preset roles carry domain depth; this carries how to actually operate
-// here, the tools, the cadence, the chain of command. Without it a role is
-// just a personality that doesn't know it lives in a team.
+// here, the tools and the cadence. Without it a role is just a personality
+// that doesn't know it lives in a team. (The lead/Helm messaging nuances are
+// conveyed by the helm-teammates MCP instructions when the session connects.)
 const TEAMMATE_DOCTRINE =
   'You operate inside Helm, a multi-agent workspace, connected to your team through helm-teammates tools. ' +
   'Operating rules: call set_summary the moment you start and again whenever your focus changes, one concrete sentence, it is your status board and your teammates plan around it. ' +
   'When a teammate messages you, respond immediately, then resume your work. ' +
   'Before starting anything non-trivial, recall_memory for prior context, someone may have already solved it or decided against it. ' +
   'When you learn something durable (a decision, a gotcha, a result that outlives this task), add_memory with one self-contained fact. ' +
-  'When you are blocked or done, tell your team lead, never go quiet, and never wander outside your assignment.';
+  'Your team is isolated from other teams; anything that needs another team goes up through the Helm. Never go quiet, and never wander outside your assignment.';
 
-const LEAD_DOCTRINE =
-  'You are this team\'s LEAD. You own the outcome, not the keystrokes: break work into clear assignments, delegate with send_message (or message_team to brief everyone at once), keep every teammate unblocked, and verify completion instead of assuming it. ' +
-  'Compress your team\'s state into crisp reports: when the Helm orchestrator messages you, respond immediately with status, blockers, and what happens next, and use message_helm proactively when something material changes, a milestone, a blocker you cannot clear, a decision above your pay grade. ' +
-  'Your team is isolated from other teams: you do not message them directly. Anything that needs another team, or that changes priorities or resources, goes up through the Helm. ' +
-  'Curate knowledge: make sure your team\'s durable learnings land in add_memory, and recall_memory before pointing anyone at a problem that may already be solved. ' +
-  'Keep the team thinking bigger, pull people out of rabbit holes, be critical of weak work, decide fast, and own the consequences.';
-
-// The orchestrator's seat gets its own doctrine: it IS the Helm, so the
-// worker/lead doctrine (report to your lead, message the Helm) would point
-// it at itself. Its global tools are described by the MCP when it connects.
+// The orchestrator's seat gets its own doctrine: it IS the Helm. Its global
+// tools are described by the MCP when it connects.
 const HELM_DOCTRINE =
   'You sit at the Helm\'s own station. Your helm-teammates tools are global: list_teams shows every team with its lead, send_message reaches any team\'s LEAD (workers are off-limits, direct work through their leads), and you alone curate workspace memory (review_memory_inbox, curate_memory). ' +
   'Operating rules: call set_summary when you start and when your focus changes; respond immediately when a lead messages you; read your charter (CLAUDE.md) and ./state/ docs at session start and keep them current; review the memory inbox regularly, promote what matters, delete what is stale. ' +
@@ -39,10 +32,8 @@ const HELM_DOCTRINE =
 // A bare role appended to Claude Code's large base prompt gets diluted (Claude
 // keeps calling itself "Claude Code"); this wrapper makes the role take over how
 // it presents itself, verified to flip self-identification.
-function frameRole(role: string, position: 'worker' | 'lead', isHelmTeam: boolean): string {
-  const doctrine = isHelmTeam
-    ? HELM_DOCTRINE
-    : position === 'lead' ? `${TEAMMATE_DOCTRINE}\n\n${LEAD_DOCTRINE}` : TEAMMATE_DOCTRINE;
+function frameRole(role: string, isHelmTeam: boolean): string {
+  const doctrine = isHelmTeam ? HELM_DOCTRINE : TEAMMATE_DOCTRINE;
   if (!role.trim()) return doctrine;
   return `You are a specialist teammate on this team. Fully take on the following role and stay in character, including how you introduce and identify yourself when asked who you are. Your role: ${role.trim()}\n\n${doctrine}`;
 }
@@ -53,9 +44,9 @@ function frameRole(role: string, position: 'worker' | 'lead', isHelmTeam: boolea
 // to clear it. (`claude helm` already adds --dangerously-skip-permissions.)
 const DEV_CHANNEL_CONFIRM_MS = 2000; // wait for the channel prompt, then press Enter
 
-function buildRunCommand(role: string, model: string, position: 'worker' | 'lead', isHelmTeam: boolean): string {
+function buildRunCommand(role: string, model: string, isHelmTeam: boolean): string {
   const esc = (s: string) => s.replace(/\s*\n+\s*/g, ' ').replace(/'/g, "'\\''");
-  let cmd = `claude helm --append-system-prompt '${esc(frameRole(role, position, isHelmTeam))}'`;
+  let cmd = `claude helm --append-system-prompt '${esc(frameRole(role, isHelmTeam))}'`;
   if (model) cmd += ` --model ${model}`;
   return cmd;
 }
@@ -71,7 +62,7 @@ interface TerminalPanelProps {
   onSetLead: () => void;
   onRename: (name: string) => void;
   onSetCwd: (path: string) => void;
-  onSetRole: (role: string, model: string, position: 'worker' | 'lead') => void;
+  onSetRole: (role: string, model: string) => void;
   onOpenPreview: () => void;
   onRemove: () => void;
 }
@@ -135,14 +126,14 @@ export function TerminalPanel({
     setEditingName(false);
   }
 
-  // Save the role/model/position, then, if Claude isn't already running here,
-  // start it with the composed system prompt (role + Helm doctrine, lead
-  // doctrine when positioned as lead). The auto-run is tied to this Save.
-  function saveRole(role: string, model: string, position: 'worker' | 'lead') {
-    onSetRole(role, model, position);
+  // Save the role/model, then, if Claude isn't already running here, start it
+  // with the composed system prompt (role + operating doctrine, or the Helm's
+  // own doctrine on the helm team). The auto-run is tied to this Save.
+  function saveRole(role: string, model: string) {
+    onSetRole(role, model);
     setRoleOpen(false);
     if (canSetUp) {
-      termRef.current?.runCommand(buildRunCommand(role, model, position, isHelmTeam));
+      termRef.current?.runCommand(buildRunCommand(role, model, isHelmTeam));
       // `claude helm` pauses on a dev-channel "confirm" prompt; press Enter for it.
       window.setTimeout(() => termRef.current?.runCommand(''), DEV_CHANNEL_CONFIRM_MS);
       setLaunching(true);
@@ -273,7 +264,6 @@ export function TerminalPanel({
           name={teammate.name}
           current={teammate.systemPrompt ?? ''}
           currentModel={teammate.model ?? ''}
-          currentPosition={teammate.position ?? (isLead ? 'lead' : 'worker')}
           onSave={saveRole}
           onClose={() => setRoleOpen(false)}
         />

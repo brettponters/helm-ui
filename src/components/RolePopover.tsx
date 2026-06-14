@@ -7,8 +7,7 @@ interface RolePopoverProps {
   name: string;
   current: string;            // the teammate's existing role/system prompt
   currentModel?: string;      // the teammate's existing model alias ('' = default)
-  currentPosition?: 'worker' | 'lead';
-  onSave: (role: string, model: string, position: 'worker' | 'lead') => void;
+  onSave: (role: string, model: string) => void;
   onClose: () => void;
 }
 
@@ -20,14 +19,6 @@ const MODELS: { label: string; value: string; hint: string }[] = [
   { label: 'Haiku',   value: 'haiku',  hint: 'fast & cheap, grunt work' },
   { label: 'Sonnet',  value: 'sonnet', hint: 'balanced, real coding' },
   { label: 'Opus',    value: 'opus',   hint: 'deepest, orchestration' },
-];
-
-// Worker vs Lead changes the operating doctrine composed into the launch
-// prompt (TerminalPanel): leads get command doctrine, delegate, verify,
-// report upward to the Helm, coordinate laterally with other leads.
-const POSITIONS: { label: string; value: 'worker' | 'lead'; hint: string }[] = [
-  { label: 'Worker',    value: 'worker', hint: 'does the work, reports to its team lead' },
-  { label: 'Team Lead', value: 'lead',   hint: 'runs the team: delegates, verifies, answers to the Helm, talks to other leads' },
 ];
 
 // A real library of starting roles, grouped, one click drops a system prompt in.
@@ -138,20 +129,19 @@ const PRESET_GROUPS: { group: string; items: { label: string; prompt: string }[]
   },
 ];
 
-export function RolePopover({ name, current, currentModel, currentPosition, onSave, onClose }: RolePopoverProps) {
+export function RolePopover({ name, current, currentModel, onSave, onClose }: RolePopoverProps) {
   const [value, setValue] = useState(current);
   const [model, setModel] = useState(currentModel ?? '');
-  const [position, setPosition] = useState<'worker' | 'lead'>(currentPosition ?? 'worker');
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     areaRef.current?.focus();
   }, []);
 
-  const dirty = value.trim() !== current.trim() || model !== (currentModel ?? '') || position !== (currentPosition ?? 'worker');
+  const dirty = value.trim() !== current.trim() || model !== (currentModel ?? '');
 
   function save() {
-    onSave(value.trim().slice(0, MAX_ROLE), model, position);
+    onSave(value.trim().slice(0, MAX_ROLE), model);
   }
 
   // Portal to <body> so the modal escapes its panel's stacking context and never
@@ -176,22 +166,6 @@ export function RolePopover({ name, current, currentModel, currentPosition, onSa
                 onClick={() => setModel(m.value)}
               >
                 {m.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="rolemodal-modelrow">
-          <span className="rolemodal-rowlabel">POSITION</span>
-          <div className="rolemodal-models">
-            {POSITIONS.map(p => (
-              <button
-                key={p.value}
-                className={`rolemodal-model ${position === p.value ? 'rolemodal-model--on' : ''}`}
-                title={p.hint}
-                onClick={() => setPosition(p.value)}
-              >
-                {p.label}
               </button>
             ))}
           </div>
@@ -240,7 +214,7 @@ export function RolePopover({ name, current, currentModel, currentPosition, onSa
           <span className="rolemodal-count">{value.length}/{MAX_ROLE} · ⌘⏎ save · Esc cancel</span>
           <div className="rolemodal-actions">
             {(current || currentModel) && (
-              <button className="rolemodal-clear" onClick={() => onSave('', '', 'worker')} title="Clear role, model, and position">CLEAR</button>
+              <button className="rolemodal-clear" onClick={() => onSave('', '')} title="Clear role and model">CLEAR</button>
             )}
             <button className="rolemodal-save" disabled={!dirty} onClick={save}>SAVE</button>
           </div>
