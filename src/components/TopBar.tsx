@@ -14,7 +14,6 @@ interface TopBarProps {
   onAddTeam: () => void;
   onRenameTeam: (id: string, name: string) => void;
   onDeleteTeam: (id: string) => void;
-  onToggleTeamKind: (id: string) => void;
   onReorderTeam: (dragId: string, targetId: string, before: boolean) => void;
   onOpenHelm: () => void;
   onOpenSettings: () => void;
@@ -22,7 +21,7 @@ interface TopBarProps {
 
 export function TopBar({
   teams, activeTeamId, brokerConnected, activeCount, helmActive,
-  onSelectTeam, onAddTeam, onRenameTeam, onDeleteTeam, onToggleTeamKind, onReorderTeam, onOpenHelm, onOpenSettings,
+  onSelectTeam, onAddTeam, onRenameTeam, onDeleteTeam, onReorderTeam, onOpenHelm, onOpenSettings,
 }: TopBarProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -124,15 +123,6 @@ export function TopBar({
               <>
                 <span className="tab-name">{team.name}</span>
                 <span className="tab-count">{team.teammates.length}</span>
-                <span
-                  className={`tab-kind ${team.kind === 'client' ? 'tab-kind--client' : ''}`}
-                  title={team.kind === 'client'
-                    ? 'CLIENT team, sealed sandbox: no shared memory in, no contact with other clients. Click to make it an operations team.'
-                    : 'Operations team (VERA-internal). Click to mark as a CLIENT team (sealed sandbox).'}
-                  onClick={e => { e.stopPropagation(); onToggleTeamKind(team.id); }}
-                >
-                  {team.kind === 'client' ? 'CLIENT' : 'OPS'}
-                </span>
                 {teams.length > 1 && (
                   <span
                     className="tab-del"

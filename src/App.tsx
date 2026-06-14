@@ -78,17 +78,6 @@ export default function App() {
     save({ ...workspace!, teams: arr });
   }
 
-  // Flip a team between operations (VERA-internal) and client (sealed
-  // sandbox). The broker reads this from the workspace and enforces it.
-  function toggleTeamKind(id: string) {
-    save({
-      ...workspace!,
-      teams: teams.map(t => (t.id === id
-        ? { ...t, kind: t.kind === 'client' ? 'ops' as const : 'client' as const }
-        : t)),
-    });
-  }
-
   function deleteTeam(id: string) {
     if (teams.length <= 1) return; // always keep at least one team
     const remaining = teams.filter(t => t.id !== id);
@@ -162,7 +151,6 @@ export default function App() {
           onAddTeam={addTeam}
           onRenameTeam={renameTeam}
           onDeleteTeam={deleteTeam}
-          onToggleTeamKind={toggleTeamKind}
           onReorderTeam={reorderTeam}
           onOpenHelm={openHelm}
           onOpenSettings={() => setSettingsOpen(true)}

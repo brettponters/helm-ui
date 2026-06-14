@@ -323,12 +323,11 @@ export function stats() {
  * says which, so callers never mistake degraded recall for full recall.
  *
  * Visibility: entries with team=null are "shared" (published by the Helm).
- *   all: true           , the Helm: everything, no filter
- *   team + clientTeam   , client teams are sandboxes: ONLY their own entries
- *   team                , operations teams: their own entries + shared
- *   (neither)           , unidentified callers: shared entries only
+ *   all: true   , the Helm: everything, no filter
+ *   team        , a team: its own entries + anything shared
+ *   (neither)   , unidentified callers: shared entries only
  */
-export async function search(query, { k = 8, team = null, all = false, clientTeam = false } = {}) {
+export async function search(query, { k = 8, team = null, all = false } = {}) {
   if (typeof query !== 'string' || !query.trim()) throw new Error('query required');
   const useSemantic = semanticAvailable();
 
@@ -345,9 +344,7 @@ export async function search(query, { k = 8, team = null, all = false, clientTea
 
   let pool = [...entries.values()];
   if (!all) {
-    pool = pool.filter(e => clientTeam
-      ? (team && e.team === team)
-      : (!e.team || (team && e.team === team)));
+    pool = pool.filter(e => !e.team || (team && e.team === team));
   }
 
   const scored = pool.map(e => {
