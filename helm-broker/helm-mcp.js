@@ -113,7 +113,7 @@ Read from_id, from_name, and from_summary to understand who sent it. Reply by ca
 
 If the Helm (the workspace orchestrator) messages you, reply promptly to its from_id. If you are your team's LEAD, use the message_helm tool any time for escalations, reports, and questions. Workers cannot reach the Helm directly; they escalate through their lead.
 
-If you are your team's LEAD, you can also message other teams' leads directly by name (lateral coordination, e.g. marketing lead asking legal lead). Workers cannot cross teams; they escalate through their own lead.
+Teams are isolated: you can only message teammates ON YOUR OWN TEAM. You cannot message other teams, if something needs another team, raise it with the Helm and let it coordinate.
 
 Tools:
 - list_teammates: See the other teammates on your team (id, name, cwd, summary)
@@ -195,7 +195,7 @@ const TOOLS = [
   },
   {
     name: 'recall_memory',
-    description: 'Semantic search over workspace memory. You see your own team\'s memories plus what the Helm has published as shared (client teams see only their own). Use when you need context beyond your own session: past decisions, known quirks, prior work.',
+    description: 'Semantic search over workspace memory. You see your own team\'s memories plus what the Helm has published as shared. Use when you need context beyond your own session: past decisions, known quirks, prior work.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -245,7 +245,7 @@ const HELM_TOOLS = [
         id: { type: 'string', description: 'Memory id (from review_memory_inbox or recall_memory)' },
         text: { type: 'string', description: 'Replacement text (optional, promote/update)' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Replacement tags (optional)' },
-        team: { type: 'string', description: 'A team id to keep this memory in that team\'s sandbox, or "shared" to publish to all operations teams (never visible to client teams). Omit to leave scope unchanged.' },
+        team: { type: 'string', description: 'A team id to keep this memory scoped to that team, or "shared" to publish it to every team. Omit to leave scope unchanged.' },
       },
       required: ['action', 'id'],
     },
@@ -303,23 +303,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             if (!helmPeers.length) return text('The Helm is not online right now (no agent running in its panel).', true);
             toId = newestPeer(helmPeers).id;
           }
-          else if (!IS_HELM) {
-            // Not on this team, maybe it's another team's LEAD (lateral
-            // coordination). Resolve against the lead roster; the broker still
-            // refuses unless both sides are leads.
-            const { teams } = await fetch(`${BROKER_URL}/teams`).then(res => res.json());
-            const lateral = [];
-            for (const t of teams || []) {
-              if (t.id === TEAM || t.id === 'helm' || !t.lead) continue;
-              if (t.lead.toLowerCase() !== target.toLowerCase()) continue;
-              const leadPeer = t.peers.find(p => p.agent_name === t.lead);
-              if (leadPeer) lateral.push(leadPeer);
-            }
-            if (lateral.length === 1) toId = lateral[0].id;
-            else if (lateral.length > 1) return text(`More than one team has a lead named "${target}". Use their peer id.`, true);
-            else return text(`No teammate "${target}" on team "${TEAM}" and no other team's lead by that name. Use list_teammates for your team; team leads can also message other teams' leads by name, or "helm" to reach the orchestrator.`, true);
-          }
-          else return text(`No teammate "${target}". Use list_teams to see names/ids.`, true);
+          else return text(`No teammate "${target}"${IS_HELM ? '' : ` on team "${TEAM}"`}. Use ${IS_HELM ? 'list_teams' : 'list_teammates'} to see names/ids${IS_HELM ? '' : '. Teams are isolated, to reach another team, report to the Helm'}.`, true);
         }
         const r = await brokerFetch('/send-message', { from_id: myId, to_id: toId, text: message });
         if (r.error === 'helm_messages_leads_only') {
@@ -328,11 +312,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         if (r.error === 'helm_reports_via_lead') {
           return text(`Refused: only your team's lead may message the Helm. Report to your lead${r.lead ? ` ("${r.lead}")` : ''} and let them escalate.`, true);
         }
-        if (r.error === 'cross_team_leads_only') {
-          return text(`Refused: cross-team messages are lead-to-lead only. ${r.your_lead ? `Escalate through your lead ("${r.your_lead}")` : 'Escalate through your lead'}${r.their_lead ? `, who can reach their lead ("${r.their_lead}")` : ''}.`, true);
-        }
-        if (r.error === 'client_teams_isolated') {
-          return text('Refused: client teams are isolated from each other. If this genuinely needs cross-client coordination, the Helm orchestrator handles it.', true);
+        if (r.error === 'teams_isolated') {
+          return text('Refused: teams are isolated and cannot message each other. If this needs another team, report it to the Helm and let it coordinate.', true);
         }
         return r.ok ? text(`Message sent to ${target}.`) : text(`Failed: ${r.error}`, true);
       }
@@ -405,7 +386,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           if (offline.length) {
             members.push(`  ○ offline: ${offline.map(n => n === t.lead ? `${n} (LEAD)` : n).join(', ')}`);
           }
-          const head = `${t.name} [${t.kind}] lead: ${t.lead || 'none set'}, ${t.peers.length} live of ${(t.configured || []).length} configured`;
+          const head = `${t.name}, lead: ${t.lead || 'none set'}, ${t.peers.length} live of ${(t.configured || []).length} configured`;
           if (!members.length) return `${head}\n  (empty team)`;
           return `${head}:\n${members.join('\n')}`;
         });

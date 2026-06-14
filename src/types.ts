@@ -27,9 +27,6 @@ export interface Team {
   name: string;
   teammates: Teammate[];
   layout?: TeamLayout;  // defaults to grid when absent
-  /** 'ops' (VERA-internal, default) or 'client' (sealed sandbox: memory never
-      shared in, leads can't reach other clients). Enforced by the broker. */
-  kind?: 'ops' | 'client';
 }
 
 export interface PreviewState {

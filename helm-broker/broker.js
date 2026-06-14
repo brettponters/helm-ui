@@ -242,12 +242,6 @@ function leadNameFor(teamId) {
   return lead?.name || null;
 }
 
-// Operations teams are VERA-internal (the default); client teams are sealed
-// sandboxes for client work. Clients never receive shared memory and their
-// leads may coordinate with operations leads but never with other clients.
-function isClientTeam(teamId) {
-  return workspace?.teams?.find(t => t.id === teamId)?.kind === 'client';
-}
 
 function uid() {
   return crypto.randomBytes(4).toString('hex');
@@ -470,7 +464,6 @@ const handlers = {
       teams.push({
         id: t.id,
         name: t.name,
-        kind: t.kind === 'client' ? 'client' : 'ops',
         lead: leadNameFor(t.id),
         configured: Array.isArray(t.teammates) ? t.teammates.map(m => m.name) : [],
         peers: live[t.id] || [],
@@ -479,7 +472,7 @@ const handlers = {
     // Peers on team ids the workspace doesn't know (legacy registrations).
     for (const [tid, ps] of Object.entries(live)) {
       if (!seen.has(tid)) {
-        teams.push({ id: tid, name: tid, kind: 'ops', lead: leadNameFor(tid), configured: [], peers: ps });
+        teams.push({ id: tid, name: tid, lead: leadNameFor(tid), configured: [], peers: ps });
       }
     }
     return { teams };
@@ -508,24 +501,12 @@ const handlers = {
       }
     }
 
-    // Lateral: leads coordinate across teams directly (marketing lead asks
-    // legal lead), but only lead-to-lead, workers stay within their team and
-    // escalate through their own lead. Client teams are sandboxes: their leads
-    // may reach operations leads (and vice versa), never another client's.
+    // Teams are isolated: no cross-team messaging. Two different non-Helm
+    // teams cannot talk, coordination between teams goes up through the Helm,
+    // never sideways. (Within a team and Helm<->lead are allowed above.)
     if (from && to && from.team_id !== to.team_id
         && from.team_id !== HELM_TEAM_ID && to.team_id !== HELM_TEAM_ID) {
-      const fromIsLead = from.agent_name === leadNameFor(from.team_id);
-      const toIsLead = to.agent_name === leadNameFor(to.team_id);
-      if (!fromIsLead || !toIsLead) {
-        return {
-          error: 'cross_team_leads_only',
-          your_lead: leadNameFor(from.team_id),
-          their_lead: leadNameFor(to.team_id),
-        };
-      }
-      if (isClientTeam(from.team_id) && isClientTeam(to.team_id)) {
-        return { error: 'client_teams_isolated' };
-      }
+      return { error: 'teams_isolated' };
     }
 
     const msg = {
@@ -611,13 +592,13 @@ const handlers = {
 
   async 'POST /memory/search'(body) {
     // Visibility is derived from WHO is asking, never from request params:
-    // the Helm sees all, client teams see only their own, operations teams
-    // see their own plus shared, unknown callers see shared only.
+    // the Helm sees all, a team sees its own plus anything the Helm shared,
+    // unknown callers see shared only.
     const viewer = body.from_id ? peers.get(body.from_id) : null;
     const scope = viewer && isHelmActor(viewer.id)
       ? { all: true }
       : viewer
-        ? { team: viewer.team_id, clientTeam: isClientTeam(viewer.team_id) }
+        ? { team: viewer.team_id }
         : {};
     const { results, semantic } = await memory.search(body.query, { k: body.k, ...scope });
     return {

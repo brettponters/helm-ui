@@ -218,24 +218,17 @@ test('text update invalidates the stale vector until re-embedded', async () => {
 
 // ─── Visibility ───────────────────────────────────────────────────────────────
 
-test('visibility: ops sees own+shared, client sees only own, helm sees all', async () => {
+test('visibility: a team sees own+shared but not other teams; helm sees all', async () => {
   await memory.addMemory({ text: 'visibility shared workspace fact' });                       // team null = shared
   await memory.addMemory({ text: 'visibility marketing private fact', team: 'marketing' });
-  await memory.addMemory({ text: 'visibility palm client secret fact', team: 'palm' });
+  await memory.addMemory({ text: 'visibility palm private fact', team: 'palm' });
 
-  // Operations team: its own + shared, never another team's.
-  const ops = await memory.search('visibility fact', { team: 'marketing' });
-  const opsTexts = ops.results.map(r => r.entry.text).join('|');
-  assert.match(opsTexts, /shared workspace/);
-  assert.match(opsTexts, /marketing private/);
-  assert.ok(!opsTexts.includes('palm client'), 'ops must not see another team');
-
-  // Client team: ONLY its own, shared never flows in.
-  const client = await memory.search('visibility fact', { team: 'palm', clientTeam: true });
-  const clientTexts = client.results.map(r => r.entry.text).join('|');
-  assert.match(clientTexts, /palm client/);
-  assert.ok(!clientTexts.includes('shared workspace'), 'client must not see shared');
-  assert.ok(!clientTexts.includes('marketing private'), 'client must not see ops teams');
+  // A team: its own + shared, never another team's.
+  const mkt = await memory.search('visibility fact', { team: 'marketing' });
+  const mktTexts = mkt.results.map(r => r.entry.text).join('|');
+  assert.match(mktTexts, /shared workspace/);
+  assert.match(mktTexts, /marketing private/);
+  assert.ok(!mktTexts.includes('palm private'), 'a team must not see another team');
 
   // The Helm: everything.
   const helm = await memory.search('visibility fact', { all: true });
