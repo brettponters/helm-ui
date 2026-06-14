@@ -163,16 +163,24 @@ export default function App() {
           onOpenSettings={() => setSettingsOpen(true)}
         />
 
-        {/* Only the active team is mounted. Shells live in the PTY daemon and
-            survive unmounting (and app restarts), switching teams reattaches
-            and replays recent output, so hidden teams cost no renderer memory. */}
-        {teams.filter((team: Workspace['teams'][number]) => team.id === activeTeamId).map(team => (
-          <TeamWorkspace
+        {/* All teams stay mounted; only the active one is shown (the rest are
+            display:none). Switching tabs must NOT unmount a team, unmounting
+            tears down its terminals' websockets and disrupts the live session.
+            Hiding keeps every shell connected and rendered, so switching is
+            instant and seamless. (Sessions are also daemon-backed, so they
+            survive a full app restart on top of this.) */}
+        {teams.map((team: Workspace['teams'][number]) => (
+          <div
             key={team.id}
-            team={team}
-            peers={peers}
-            onUpdateTeam={updateTeam}
-          />
+            className="team-mount"
+            style={{ display: team.id === activeTeamId ? 'contents' : 'none' }}
+          >
+            <TeamWorkspace
+              team={team}
+              peers={peers}
+              onUpdateTeam={updateTeam}
+            />
+          </div>
         ))}
 
         {settingsOpen && (
