@@ -8,10 +8,6 @@ export interface Teammate {
   side?: 'left' | 'right';   // which side it sits on in lead mode
   systemPrompt?: string;     // role / system prompt configured for this teammate
   model?: string;            // model alias (haiku|sonnet|opus) configured for this teammate
-  /** How this agent operates in the org: a worker gets the Helm teammate
-      doctrine; a lead additionally gets command doctrine (delegate, report to
-      the Helm, coordinate laterally). Composed into the launch prompt. */
-  position?: 'worker' | 'lead';
 }
 
 export type LayoutMode = 'grid' | 'lead';

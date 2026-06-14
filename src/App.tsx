@@ -16,23 +16,26 @@ export default function App() {
   const { peers, connected } = usePeers();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Apply commands an agent issued via MCP (rename its own panel).
+  // Apply commands an agent issued via MCP (rename its own panel). Applied via
+  // a functional update against the freshest workspace so a poll firing
+  // mid-edit can't clobber a concurrent change.
   useUiCommands(cmds => {
-    if (!workspace) return;
-    let next = workspace;
-    let changed = false;
-    for (const c of cmds) {
-      if (c.type === 'rename' && c.team && c.teammate && c.name) {
-        next = {
-          ...next,
-          teams: next.teams.map(t => t.id === c.team
-            ? { ...t, teammates: t.teammates.map(m => m.name === c.teammate ? { ...m, name: c.name! } : m) }
-            : t),
+    const renames = cmds.filter(c => c.type === 'rename' && c.team && c.teammate && c.name);
+    if (!renames.length) return;
+    save(prev => ({
+      ...prev,
+      teams: prev.teams.map(t => {
+        const forTeam = renames.filter(c => c.team === t.id);
+        if (!forTeam.length) return t;
+        return {
+          ...t,
+          teammates: t.teammates.map(m => {
+            const hit = forTeam.find(c => c.teammate === m.name);
+            return hit ? { ...m, name: hit.name! } : m;
+          }),
         };
-        changed = true;
-      }
-    }
-    if (changed) save(next);
+      }),
+    }));
   });
 
   // Apply the active theme + glow to the document so all CSS-driven surfaces
@@ -49,18 +52,20 @@ export default function App() {
   const { teams, activeTeamId, prefs } = workspace;
 
   function setActiveTeam(id: string) {
-    save({ ...workspace!, activeTeamId: id });
+    save(prev => ({ ...prev, activeTeamId: id }));
   }
 
   function addTeam() {
     const id = `team-${crypto.randomUUID().slice(0, 8)}`;
-    const name = `TEAM ${teams.length + 1}`;
-    const newTeam: Team = { id, name, teammates: [] };
-    save({ ...workspace!, teams: [...teams, newTeam], activeTeamId: id });
+    save(prev => ({
+      ...prev,
+      teams: [...prev.teams, { id, name: `TEAM ${prev.teams.length + 1}`, teammates: [] }],
+      activeTeamId: id,
+    }));
   }
 
   function renameTeam(id: string, name: string) {
-    save({ ...workspace!, teams: teams.map(t => (t.id === id ? { ...t, name } : t)) });
+    save(prev => ({ ...prev, teams: prev.teams.map(t => (t.id === id ? { ...t, name } : t)) }));
   }
 
   // Drag-to-reorder tabs. The teams array order IS the tab order, so this
@@ -68,21 +73,25 @@ export default function App() {
   // keeps its array position; we only move the dragged team around the target.
   function reorderTeam(dragId: string, targetId: string, before: boolean) {
     if (dragId === targetId) return;
-    const arr = [...teams];
-    const fromIdx = arr.findIndex(t => t.id === dragId);
-    if (fromIdx < 0) return;
-    const [moved] = arr.splice(fromIdx, 1);
-    const targetIdx = arr.findIndex(t => t.id === targetId);
-    if (targetIdx < 0) return;
-    arr.splice(before ? targetIdx : targetIdx + 1, 0, moved);
-    save({ ...workspace!, teams: arr });
+    save(prev => {
+      const arr = [...prev.teams];
+      const fromIdx = arr.findIndex(t => t.id === dragId);
+      if (fromIdx < 0) return prev;
+      const [moved] = arr.splice(fromIdx, 1);
+      const targetIdx = arr.findIndex(t => t.id === targetId);
+      if (targetIdx < 0) return prev;
+      arr.splice(before ? targetIdx : targetIdx + 1, 0, moved);
+      return { ...prev, teams: arr };
+    });
   }
 
   function deleteTeam(id: string) {
-    if (teams.length <= 1) return; // always keep at least one team
-    const remaining = teams.filter(t => t.id !== id);
-    const activeId = activeTeamId === id ? remaining[0].id : activeTeamId;
-    save({ ...workspace!, teams: remaining, activeTeamId: activeId });
+    save(prev => {
+      if (prev.teams.length <= 1) return prev; // always keep at least one team
+      const remaining = prev.teams.filter(t => t.id !== id);
+      const activeTeamId = prev.activeTeamId === id ? remaining[0].id : prev.activeTeamId;
+      return { ...prev, teams: remaining, activeTeamId };
+    });
   }
 
   // The HELM wordmark opens the orchestrator's own team, created on first
@@ -101,41 +110,39 @@ export default function App() {
       status: 'running' as const,
       systemPrompt: HELM_ORCHESTRATOR_PROMPT,
       model: 'opus',
-      position: 'lead' as const,
     });
 
-    const existing = teams.find(t => t.id === HELM_TEAM_ID);
-    if (!existing) {
-      const helmTeam: Team = { id: HELM_TEAM_ID, name: 'THE HELM', teammates: [freshOrchestrator()] };
-      save({ ...workspace!, teams: [...teams, helmTeam], activeTeamId: HELM_TEAM_ID });
-      return;
-    }
-
-    const teammates = existing.teammates.length === 0
-      ? [freshOrchestrator()]
-      : existing.teammates.map((m, i) => (i === 0
-        ? {
-            ...m,
-            systemPrompt: m.systemPrompt?.trim() ? m.systemPrompt : HELM_ORCHESTRATOR_PROMPT,
-            model: m.model || 'opus',
-            position: 'lead' as const,
-            cwd: !m.cwd || m.cwd === '~/' ? '~/.helm/admiral' : m.cwd,
-          }
-        : m));
-    const healed: Team = { ...existing, teammates };
-    save({
-      ...workspace!,
-      teams: teams.map(t => (t.id === HELM_TEAM_ID ? healed : t)),
-      activeTeamId: HELM_TEAM_ID,
+    save(prev => {
+      const existing = prev.teams.find(t => t.id === HELM_TEAM_ID);
+      if (!existing) {
+        const helmTeam: Team = { id: HELM_TEAM_ID, name: 'THE HELM', teammates: [freshOrchestrator()] };
+        return { ...prev, teams: [...prev.teams, helmTeam], activeTeamId: HELM_TEAM_ID };
+      }
+      const teammates = existing.teammates.length === 0
+        ? [freshOrchestrator()]
+        : existing.teammates.map((m, i) => (i === 0
+          ? {
+              ...m,
+              systemPrompt: m.systemPrompt?.trim() ? m.systemPrompt : HELM_ORCHESTRATOR_PROMPT,
+              model: m.model || 'opus',
+              cwd: !m.cwd || m.cwd === '~/' ? '~/.helm/admiral' : m.cwd,
+            }
+          : m));
+      const healed: Team = { ...existing, teammates };
+      return {
+        ...prev,
+        teams: prev.teams.map(t => (t.id === HELM_TEAM_ID ? healed : t)),
+        activeTeamId: HELM_TEAM_ID,
+      };
     });
   }
 
   function updateTeam(updated: Team) {
-    save({ ...workspace!, teams: teams.map(t => (t.id === updated.id ? updated : t)) });
+    save(prev => ({ ...prev, teams: prev.teams.map(t => (t.id === updated.id ? updated : t)) }));
   }
 
   function updatePrefs(patch: Partial<Prefs>) {
-    save({ ...workspace!, prefs: { ...prefs, ...patch } });
+    save(prev => ({ ...prev, prefs: { ...prev.prefs, ...patch } }));
   }
 
   return (
